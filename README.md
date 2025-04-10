@@ -19,7 +19,7 @@
 - pip install -r requirements.txt
 - Visit the following site to retrieve the appropriate pip install for torch: https://pytorch.org/
 
-4. Next, create .env file in your lmforge folder which should contain the following information:
+4. Next, create .env file in the outer lmforge folder which should contain the following information:
     DATABASE_NAME=mydatabase 
     DATABASE_USER=myuser
     DATABASE_PASSWORD=mypassword
@@ -30,9 +30,10 @@
     OPENAI_API_KEY=yourKey
 - Be sure to change the values above to values for your system. 
 
-5. Last, make sure your file location in your terminal is in the outer django_backend folder. Then, run the commands below one by one:
+5. Last, make sure your file location in your terminal is in the outer lmforge folder. Then, run the commands below one by one:
 - python manage.py makemigrations
 - python manage.py migrate
 - python manage.py runserver
 
-* Whenever you want to start the applicatoin again, start your Python virtual environment and simply run the last of the three above commands.
+6. Whenever you want to start the applicatoin again, start your Python virtual environment and simply run:
+- python manage.py runserver 
