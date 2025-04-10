@@ -19,7 +19,7 @@
 - pip install -r requirements.txt
 - Visit the following site to retrieve the appropriate pip install for torch: https://pytorch.org/
 
-4. Next, create .env file in your lmforge > lmforge folder which should contain the following information:
+4. Next, create .env file in your lmforge folder which should contain the following information:
     DATABASE_NAME=mydatabase 
     DATABASE_USER=myuser
     DATABASE_PASSWORD=mypassword
