@@ -4,7 +4,7 @@ import os
 from django.conf import settings
 
 def settings_view(request):
-    env_file = os.path.join(settings.BASE_DIR, 'django_backend', '.env')
+    env_file = os.path.join(settings.BASE_DIR, '.env')
     existing_values = {}
     message = None  
     message_type = None  
