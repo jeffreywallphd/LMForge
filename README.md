@@ -30,10 +30,12 @@
     OPENAI_API_KEY=yourKey
 - Be sure to change the values above to values for your system. 
 
-5. Last, make sure your file location in your terminal is in the outer lmforge folder. Then, run the commands below one by one:
+5. Last, make sure your file location in your terminal is in the outer lmforge folder. Start your Python virtual environment with the first command below. Then, run the next three Python commands.
+- .\venv\Scripts\activate
 - python manage.py makemigrations
 - python manage.py migrate
 - python manage.py runserver
 
-6. Whenever you want to start the applicatoin again, start your Python virtual environment and simply run:
+6. Whenever you want to start the applicatoin again, start your Python virtual environment and run the Python command below.
+- .\venv\Scripts\activate
 - python manage.py runserver 
