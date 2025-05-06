@@ -1,0 +1,31 @@
+{
+    "Documents/Legal Aspects of Corporate Management and Finance.pdf": [],
+    "Documents/PrinciplesofFinance-WEB.pdf": [
+        {
+            "chunk": "162\nMeasures of Financial Health\n165\n6\nWhy It Matters\n165\n6.1 Ratios: Condensing Information into Smaller Pieces\n166\nAccess for free at openstax.org\n6.2 Operating Efficiency Ratios\n167\n6.3 Liquidity Ratios\n172\n6.4 Solvency Ratios\n174\n6.5 Market Value Ratios\n176\n6.6 Profitability Ratios and the DuPont Method\n182\nSummary\n186\nKey Terms\n186\nCFA Institute\n187\nMultiple Choice\n187\nReview Questions\n188\nProblems\n189\nVideo Activity\n189\nTime Value of Money I: Single Payment Value\n191\n7\nWhy It Matters\n191\n7.1 Now versus Later Concepts\n192\n7.2 Time Value of Money (TVM) Basics\n193\n7.3 Methods for Solving Time Value of Money Problems\n196\n7.4 Applications of TVM in Finance\n214\nSummary\n222\nKey Terms\n222\nCFA Institute\n223\nMultiple Choice\n223\nReview Questions\n224\nProblems\n224\nVideo Activity\n225\nTime Value of Money II: Equal Multiple Payments\n227\n8\nWhy It Matters\n227\n8.1 Perpetuities\n228\n8.2 Annuities\n231\n8.3 Loan Amortization\n239\n8.4 Stated versus Effective Rates\n243\n8.5 Equal Payments with a Financial Calculator and Excel\n246\nSummary\n257\nKey Terms\n257\nCFA Institute\n258\nMultiple Choice\n258\nProblems\n260\nVideo Activity\n261\nTime Value of Money III: Unequal Multiple Payment Values\n263\n9\nWhy It Matters\n263\n9.1 Timing of Cash Flows\n264",
+            "qa_pairs": [
+                {
+                    "question": "What are the 6 ratios used to measure financial health?",
+                    "answer": "6.1 Ratios: Condensing Information into Smaller Pieces\n6.2 Operating Efficiency Ratios\n6.3 Liquidity Ratios\n6.4 Solvency Ratios\n6.5 Market Value Ratios\n6.6 Profitability Ratios and the DuPont Method"
+                },
+                {
+                    "question": "What are the 3 concepts of now versus later?",
+                    "answer": "Now versus Later Concepts\nNow versus Later Concepts\nNow versus Later Concepts"
+                }
+            ]
+        },
+        {
+            "chunk": "257\nCFA Institute\n258\nMultiple Choice\n258\nProblems\n260\nVideo Activity\n261\nTime Value of Money III: Unequal Multiple Payment Values\n263\n9\nWhy It Matters\n263\n9.1 Timing of Cash Flows\n264\n9.2 Unequal Payments Using a Financial Calculator or Microsoft Excel\n271\nSummary\n278\nKey Terms\n278\nCFA Institute\n278\nMultiple Choice\n278\nReview Questions\n279\nProblems\n280\nVideo Activity\n281\nBonds and Bond Valuation\n283\n10\nWhy It Matters\n283\n10.1 Characteristics of Bonds\n284\n10.2 Bond Valuation\n288\n10.3 Using the Yield Curve\n296\n10.4 Risks of Interest Rates and Default\n301\n10.5 Using Spreadsheets to Solve Bond Problems\n306\nSummary\n313\nKey Terms\n313\nCFA Institute\n315\nMultiple Choice\n315\nReview Questions\n317\nProblems\n317\nVideo Activity\n318\nStocks and Stock Valuation\n319\n11\nWhy It Matters\n319\n11.1 Multiple Approaches to Stock Valuation\n320\n11.2 Dividend Discount Models (DDMs)\n325\n11.3 Discounted Cash Flow (DCF) Model\n341\n11.4 Preferred Stock\n343\n11.5 Efficient Markets\n345\nSummary\n347\nKey Terms\n347\nCFA Institute\n349\nMultiple Choice\n349\nReview Questions\n350\nProblems\n350\nVideo Activity\n351\nHistorical Performance of US Markets\n353\n12\nWhy It Matters\n353\n12.1 Overview of US Financial Markets\n354\nAccess for free at openstax.org\n12.2 Historical Picture of Inflation\n362",
+            "qa_pairs": [
+                {
+                    "question": "What is the name of the organization that develops and administers the CFA program?",
+                    "answer": "CFA Institute"
+                },
+                {
+                    "question": "What type of problems are in the CFA program?",
+                    "answer": "Multiple Choice Problems"
+                }
+            ]
+        }
+    ]
+}
