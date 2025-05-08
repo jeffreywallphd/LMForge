@@ -1,0 +1,45 @@
+{
+    "Documents/Legal Aspects of Corporate Management and Finance.pdf": [
+        {
+            "chunk": "which most conventional texts incorporate video is cumbersome because the videos are contained in \na separate library, which makes access more complicating for instructors and students. \n \n \n \n \n \n \n \n \n \n \n \nSaylor URL: http://www.saylor.org/books \n \nSaylor.org \n \n \n3 \nChapter 1 \nIntroduction to Law and Legal Systems \n \nLEARNING OBJECTIVES \n \nAfter reading this chapter, you should be able to do the following: \n1. Distinguish different philosophies of law—schools of legal thought—and explain their relevance. \n2. Identify the various aims that a functioning legal system can serve. \n3. Explain how politics and law are related.",
+            "qa_pairs": [
+                {
+                    "question": "what is the most common way of incorporating video in a conventional text?",
+                    "answer": "the most common way of incorporating video in a conventional text is to have it as a separate library."
+                },
+                {
+                    "question": "what makes access to the videos more complicated for instructors and students?",
+                    "answer": "access to the videos is more complicated for instructors and students because they are contained in a separate library."
+                }
+            ]
+        }
+    ],
+    "Documents/PrinciplesofFinance-WEB.pdf": [
+        {
+            "chunk": "contents herein must provide proper attribution as follows:  \n-\nIf you redistribute this textbook in a digital format (including but not limited to PDF and HTML), then you\nmust retain on every page the following attribution:\n“Access for free at openstax.org.”\n-\nIf you redistribute this textbook in a print format, then you must include on every physical page the\nfollowing attribution:\n“Access for free at openstax.org.”\n-\nIf you redistribute part of this textbook, then you must retain in every digital format page view (including\nbut not limited to PDF and HTML) and on every physical printed page the following attribution:",
+            "qa_pairs": [
+                {
+                    "question": "What is the definition of open source?",
+                    "answer": "Open source is a term used to describe software that is available to the general public at no cost. The source code is made available to the public, and the public can modify and redistribute the software."
+                },
+                {
+                    "question": "What is the definition of open access?",
+                    "answer": "Open access is a term used to describe literature that is freely available to the public. The literature is made available to the public, and the public can access and use the literature."
+                }
+            ]
+        },
+        {
+            "chunk": "initiative based at Rice University, we’re committed to helping students access the tools they need to complete \ntheir courses and meet their educational goals. \n \nRICE UNIVERSITY \n \nOpenStax, OpenStax CNX, and OpenStax Tutor are initiatives of Rice University. As a leading research university \nwith a distinctive commitment to undergraduate education, Rice University aspires to path-breaking research, \nunsurpassed teaching, and contributions to the betterment of our world. It seeks to fulfill this mission by \ncultivating a diverse community of learning and discovery that produces leaders across the spectrum of human \nendeavor.",
+            "qa_pairs": [
+                {
+                    "question": "What is the mission of Rice University?",
+                    "answer": "Rice University aspires to path-breaking research, unsurpassed teaching, and contributions to the betterment of our world."
+                },
+                {
+                    "question": "What is OpenStax?",
+                    "answer": "OpenStax, OpenStax CNX, and OpenStax Tutor are initiatives of Rice University."
+                }
+            ]
+        }
+    ]
+}

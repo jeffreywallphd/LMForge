@@ -1,0 +1,71 @@
+{
+    "Documents/Legal Aspects of Corporate Management and Finance.pdf": [
+        {
+            "chunk": "which most conventional texts incorporate video is cumbersome because the videos are contained in \na separate library, which makes access more complicating for instructors and students. \n \n \n \n \n \n \n \n \n \n \n \nSaylor URL: http://www.saylor.org/books \n \nSaylor.org \n \n \n3 \nChapter 1 \nIntroduction to Law and Legal Systems \n \nLEARNING OBJECTIVES \n \nAfter reading this chapter, you should be able to do the following: \n1. Distinguish different philosophies of law—schools of legal thought—and explain their relevance. \n2. Identify the various aims that a functioning legal system can serve. \n3. Explain how politics and law are related.",
+            "qa_pairs": [
+                {
+                    "question": "Why do most conventional texts incorporate video is cumbersome?",
+                    "answer": "The videos are contained in a separate library, which makes access more complicating for instructors and students. "
+                },
+                {
+                    "question": "Which most conventional texts incorporate video is cumbersome because the videos are contained in a separate library?",
+                    "answer": "The videos are contained in a separate library, which makes access more complicating for instructors and students. "
+                }
+            ]
+        },
+        {
+            "chunk": "or political opponents (e.g., Burma, Zimbabwe, or Iraq under Saddam Hussein). Under colonialism, \nEuropean nations often imposed peace in countries whose borders were somewhat arbitrarily created by \nthose same European nations. Over several centuries prior to the twentieth century, empires were built by \nSpain, Portugal, Britain, Holland, France, Germany, Belgium, and Italy. With regard to the functions of \nthe law, the empire may have kept the peace—largely with force—but it changed the status quo and \nseldom promoted the native peoples’ rights or social justice within the colonized nation.",
+            "qa_pairs": [
+                {
+                    "question": "What is the difference between colonialism and imperialism?",
+                    "answer": "The difference between colonialism and imperialism is that colonialism is the act of taking over another country and controlling it, while imperialism is the act of expanding a country's power and influence over other countries."
+                },
+                {
+                    "question": "What are some examples of colonialism?",
+                    "answer": "Some examples of colonialism include the British Empire, the French Empire, and the Spanish Empire."
+                }
+            ]
+        },
+        {
+            "chunk": "Union, the withdrawal of a central power created power vacuums that were exploited by ethnic leaders. \nWhen Yugoslavia broke up, the different ethnic groups—Croats, Bosnians, and Serbians—fought bitterly \nfor home turf rather than share power. In Iraq and Afghanistan, the effective blending of different groups \nof families, tribes, sects, and ethnic groups into a national governing body that shares power remains to be \nseen. \n \nLaw and Politics \nSaylor URL: http://www.saylor.org/books \n \nSaylor.org \n \n \n5 \nIn the United States, legislators, judges, administrative agencies, governors, and presidents make law,",
+            "qa_pairs": [
+                {
+                    "question": "What is the withdrawal of a central power called?",
+                    "answer": "Power vacuums"
+                },
+                {
+                    "question": "What is the result of power vacuums?",
+                    "answer": "Ethnic leaders exploit them."
+                }
+            ]
+        }
+    ],
+    "Documents/PrinciplesofFinance-WEB.pdf": [
+        {
+            "chunk": "Rice University logo are not subject to the license and may not be reproduced without the prior and express \nwritten consent of Rice University. \n978-1-711470-53-5\n978-1-711470-52-8\n978-1-951693-54-1\n2022\nHARDCOVER BOOK ISBN-13 \nB&W PAPERBACK BOOK ISBN-13 \nDIGITAL VERSION ISBN-13 \nORIGINAL PUBLICATION YEAR \n1 2 3 4 5 6 7 8 9 10  JAY  22 \n \n \nOPENSTAX \n \nOpenStax provides free, peer-reviewed, openly licensed textbooks for introductory college and Advanced \nPlacement® courses and low-cost, personalized courseware that helps students learn. A nonprofit ed tech",
+            "qa_pairs": [
+                {
+                    "question": "What is the OpenStax?",
+                    "answer": "OpenStax provides free, peer-reviewed, openly licensed textbooks for introductory college and Advanced Placement® courses and low-cost, personalized courseware that helps students learn. A nonprofit ed tech initiative based at Rice University, we're committed to helping students access the tools they need to complete their courses and meet their educational goals."
+                },
+                {
+                    "question": "What is the OpenStax logo?",
+                    "answer": "Rice University logo are not subject to the license and may not be reproduced without the prior and express written consent of Rice University."
+                }
+            ]
+        },
+        {
+            "chunk": "initiative based at Rice University, we’re committed to helping students access the tools they need to complete \ntheir courses and meet their educational goals. \n \nRICE UNIVERSITY \n \nOpenStax, OpenStax CNX, and OpenStax Tutor are initiatives of Rice University. As a leading research university \nwith a distinctive commitment to undergraduate education, Rice University aspires to path-breaking research, \nunsurpassed teaching, and contributions to the betterment of our world. It seeks to fulfill this mission by \ncultivating a diverse community of learning and discovery that produces leaders across the spectrum of human \nendeavor.",
+            "qa_pairs": [
+                {
+                    "question": "What is the name of the Rice University?",
+                    "answer": "Rice University"
+                },
+                {
+                    "question": "What is the initiative based at Rice University?",
+                    "answer": "OpenStax, OpenStax CNX, and OpenStax Tutor are initiatives of Rice University."
+                }
+            ]
+        }
+    ]
+}
