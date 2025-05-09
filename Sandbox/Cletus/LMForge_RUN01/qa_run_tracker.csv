@@ -1,3 +1,0 @@
-chunk_size,max_tokens,questions_num,completed
-128,128,2,True
-128,256,2,True
