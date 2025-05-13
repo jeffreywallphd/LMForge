@@ -9,8 +9,8 @@ chunk_size,max_tokens,questions_num,completed
 256,512,2,True
 256,1024,2,True
 256,2048,2,True
-512,128,2,False
-512,256,2,False
+512,128,2,True
+512,256,2,True
 512,512,2,False
 512,1024,2,False
 512,2048,2,False
