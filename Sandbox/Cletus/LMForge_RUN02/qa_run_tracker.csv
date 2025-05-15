@@ -17,5 +17,5 @@ chunk_size,max_tokens,questions_num,completed
 1024,128,2,True
 1024,256,2,True
 1024,512,2,True
-1024,1024,2,False
-1024,2048,2,False
+1024,1024,2,True
+1024,2048,2,True
