@@ -20,16 +20,52 @@ import io
 import csv
 from huggingface_hub import HfApi
 from datasets import Dataset
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import os
+import logging
+from huggingface_hub import login
+import transformers
+import re
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-client = OpenAI(
-    api_key=config('OPENAI_API_KEY', default=""),
+
+DEFAULT_HF_API_KEY = config("HUGGINGFACE_TOKEN", default="")
+# setting huggingface token
+# setting huggingface token
+login(token=DEFAULT_HF_API_KEY)
+
+os.environ["HF_HOME"] = "D:/huggingface_cache" 
+os.environ["TRANSFORMERS_CACHE"] = "D:/huggingface_cache"
+os.environ["HUGGINGFACE_HUB_CACHE"] = "D:/huggingface_cache"
+logging.info(f"Setting up Hugging Face environment variables...")
+
+logging.info(f"HF_HOME: {os.getenv('HF_HOME')}")
+logging.info(f"TRANSFORMERS_CACHE: {os.getenv('TRANSFORMERS_CACHE')}")
+logging.info(f"HUGGINGFACE_HUB_CACHE: {os.getenv('HUGGINGFACE_HUB_CACHE')}")
+
+transformers.utils.hub.TRANSFORMERS_CACHE = "D:/huggingface_cache"
+
+
+model_name = "meta-llama/Meta-Llama-3-8B"
+
+# Load the tokenizer and model
+tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=True)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token  # Set pad token to eos token if not set
+
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    torch_dtype=torch.float16,
+    device_map="auto",
+    low_cpu_mem_usage=True,
+    trust_remote_code=True
 )
-DEFAULT_HF_API_KEY = config("HF_API_KEY", default="")
 
-# Tokenizer function (GPT-4 uses "cl100k_base" tokenizer)
+# Tokenizer function to count tokens in a text
 def count_tokens(text):
-    enc = tiktoken.get_encoding("cl100k_base")
-    return len(enc.encode(text))
+    return len(tokenizer.encode(text))
 
 
 # Function to split text into segments while respecting token limits
@@ -54,84 +90,72 @@ def split_text(text, max_tokens=1000):
 
     return chunks
 
+def llama_chat(prompt: str, max_new_tokens: int = 25): #temperature: float = 0.5):
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=max_new_tokens,
+        do_sample=True,
+        #temperature=temperature,
+        pad_token_id=tokenizer.eos_token_id
+    )
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 
-
-def extract_qa(text, chunk_limit, model="gpt-4", questions_num=1, instruction_prompt=""):
-    text_chunks = split_text(text, max_tokens=1000)  # Adjust chunk size
+def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt=""):
+    text_chunks = split_text(text, max_tokens=1000)
     results = []
-
     total_chunks = len(text_chunks)
 
     for i, chunk in enumerate(text_chunks[:chunk_limit]):
-        print(f'Total {total_chunks}, finished {i + 1}')
+        logging.info(f"Processing chunk {i+1}/{total_chunks}")
 
-        instruction_prompt_preamble = ""
-        instruction_prompt_details = ""
+        # 1) Build a VERY strict prompt
+        strict_prompt = f"""
+Generate {questions_num} question-answer pairs based on the following text segment. 
+Return the result in valid JSON format as a list of objects.
 
-        if instruction_prompt:
-            instruction_prompt_preamble = "Include an instruction prompt for each question-answer pair. The instruction prompt should be different for each question, but have the same meaning as the base instruction prompt."
-            instruction_prompt_details = f"""
-            Base Instruction Prompt:
-            {instruction_prompt}
-            """
+Text Segment:
 
-            response_format = f"""
-            [
-                {{"input": "What is ...?", "output": "The answer is ...", "instruction": "You are a ..."}},
-                {{"input": "How does ... work?", "output": "It works by ...", "instruction": "Answer questions as though you are a..."}}
-            ]
-            """
-        else:
-            response_format = f"""        
-            [
-                {{"input": "What is ...?", "output": "The answer is ..."}},
-                {{"input": "How does ... work?", "output": "It works by ..."}}
-            ]
-            """
+{chunk}
+Base instruction prompt (if any): {instruction_prompt}
 
-        prompt = f"""
-        Generate {questions_num} question-answer pairs based on the following text segment. 
-        Return the result in valid JSON format as a list of objects. {instruction_prompt_preamble}
+Example format:
+[
+  {{"input": "What is ...?", "output": "The answer is ..."{', "instruction": "…"' if instruction_prompt else ''}}},
+  …
+]
+Make sure to:
+- Use clear and concise questions.
 
-        Text Segment:
-        {chunk}
+Respond ONLY with a JSON array of question-answer objects. Do NOT include example data or instructions. Every object must include a key "input" for the question and "output" for the answer (at least 250 words). Do NOT include '...' or '…' placeholders. Output nothing but valid JSON.
+Answer:"""
+        # 2) Call the model
+        response_text = llama_chat(strict_prompt, max_new_tokens=512)#, temperature=0.0)
+        print(f"Model response for chunk {i+1}:\n{response_text}")
+        # 3) Extract the JSON substring
+        match = re.search(r'(\[.*\])', response_text, re.DOTALL)
+        if not match:
+            logging.error(f"No JSON found in model output:\n{response_text}")
+            # results.append({"part": i+1, "error": "No JSON array found"})
+            continue
 
-        {instruction_prompt_details}
-        
-        Response Format:
-        {response_format}
+        json_str = match.group(1)
 
-        Return ONLY valid JSON output.
-        """
-
-        #print(prompt)
-
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.5
-        )
-
+        # 4) Parse it
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.5
-            )
-
-            json_data = json.loads(response.choices[0].message.content.strip())
-
-            if isinstance(json_data, list):  
-                results.extend(json_data)
+            data = json.loads(json_str)
+            if isinstance(data, list):
+                results.extend(data)
+                print(f"Parsed JSON for chunk {i+1}:\n{data}")
+                print(f"Total results so far: {len(results)}")
             else:
-                results.append({"error": "Unexpected JSON format"})
-
-        except json.JSONDecodeError:
-            results.append({"part": i + 1, "error": "Invalid JSON response"})
-        
-        except OpenAIError as e:
-            return json.dumps({"error": f"OpenAI API Error: {str(e)}"}, indent=4)
+                print(f"Parsed JSON is not a list: {data}")
+                logging.error(f"Parsed JSON is not a list: {data}")
+                # results.append({"part": i+1, "error": "Parsed JSON is not a list"})
+        except json.JSONDecodeError as e:
+            logging.error(f"JSON decode error: {e}\nJSON was:\n{json_str}")
+            # results.append({"part": i+1, "error": f"JSON decode error: {e}"})
 
     return json.dumps(results, indent=4)
 
@@ -187,6 +211,7 @@ def document_detail(request):
                     generated_json_data = json.loads(generated_json_text)
                     request.session[f'generated_json_combined'] = generated_json_text
                 except (FileNotFoundError, json.JSONDecodeError):
+                    logging.error(f"Error reading mock-up JSON file: {json_file_path}")
                     generated_json_data = {"error": "Mock-up JSON file not found or invalid"}
             
             else:
@@ -196,6 +221,7 @@ def document_detail(request):
                     request.session['generated_json_combined'] = generated_json_text
 
                 except OpenAIError:
+                    logging.error("OpenAI API quota exceeded or other error.")
                     generated_json_data = {"error": "OpenAI API quota exceeded"}
                     request.session['generated_json_combined'] = json.dumps(generated_json_data)
 
