@@ -58,10 +58,13 @@ if tokenizer.pad_token is None:
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     torch_dtype=torch.float16,
-    device_map="auto",
+    device_map="cuda",
     low_cpu_mem_usage=True,
     trust_remote_code=True
 )
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model.to(device)
 
 # Tokenizer function to count tokens in a text
 def count_tokens(text):
@@ -90,74 +93,87 @@ def split_text(text, max_tokens=1000):
 
     return chunks
 
-def llama_chat(prompt: str, max_new_tokens: int = 25): #temperature: float = 0.5):
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-    outputs = model.generate(
-        **inputs,
-        max_new_tokens=max_new_tokens,
-        do_sample=True,
-        #temperature=temperature,
-        pad_token_id=tokenizer.eos_token_id
-    )
-    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+def llama_chat(prompt: str, max_tokens: int = 25): 
+    try:
+        inputs = tokenizer(prompt, return_tensors="pt").to(device)
+        with torch.no_grad():
+            output_tokens = model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                pad_token_id=tokenizer.eos_token_id
+            )
+        generated_tokens = output_tokens[0][len(inputs["input_ids"][0]):]
+        generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
 
+        logging.info(f"Generated text: {generated_text}")
 
-def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt=""):
-    text_chunks = split_text(text, max_tokens=1000)
-    results = []
-    total_chunks = len(text_chunks)
+        # Try extracting JSON manually in extract_qa — don't parse here
+        return generated_text
 
-    for i, chunk in enumerate(text_chunks[:chunk_limit]):
-        logging.info(f"Processing chunk {i+1}/{total_chunks}")
+    except Exception as e:
+        logging.error(f"Error in llama_chat: {e}")
+        return ""
 
-        # 1) Build a VERY strict prompt
-        strict_prompt = f"""
+def build_prompt(chunk, questions_num, instruction_prompt=""):
+    instruction_field = ', "instruction": "%s"' % instruction_prompt if instruction_prompt else ""
+    return f"""
 Generate {questions_num} question-answer pairs based on the following text segment. 
 Return the result in valid JSON format as a list of objects.
 
 Text Segment:
 
 {chunk}
-Base instruction prompt (if any): {instruction_prompt}
 
-Example format:
+Response Format:
 [
-  {{"input": "What is ...?", "output": "The answer is ..."{', "instruction": "…"' if instruction_prompt else ''}}},
-  …
+    {{"question": "What is ...?", "answer": "The answer is ..."{instruction_field}}}
 ]
-Make sure to:
-- Use clear and concise questions.
 
-Respond ONLY with a JSON array of question-answer objects. Do NOT include example data or instructions. Every object must include a key "input" for the question and "output" for the answer (at least 250 words). Do NOT include '...' or '…' placeholders. Output nothing but valid JSON.
-Answer:"""
-        # 2) Call the model
-        response_text = llama_chat(strict_prompt, max_new_tokens=512)#, temperature=0.0)
-        print(f"Model response for chunk {i+1}:\n{response_text}")
-        # 3) Extract the JSON substring
-        match = re.search(r'(\[.*\])', response_text, re.DOTALL)
+Each answer should be at least 250 words long.
+
+Do NOT include any explanation or preamble before or after the JSON output.
+Return ONLY valid JSON.
+Answer:
+"""
+
+def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt=""):
+    text_chunks = split_text(text, max_tokens=256)  # Adjust as needed
+    results = []
+    total_chunks = len(text_chunks)
+
+    for i, chunk in enumerate(text_chunks[:chunk_limit]):
+        logging.info(f"Processing chunk {i+1}/{total_chunks}")
+
+        strict_prompt = build_prompt(chunk, questions_num, instruction_prompt)
+        model_output = llama_chat(strict_prompt, max_tokens=512)
+
+        # Try to extract JSON list
+        match = re.search(r'(\[\s*{.*?}\s*\])', model_output, re.DOTALL)
         if not match:
-            logging.error(f"No JSON found in model output:\n{response_text}")
-            # results.append({"part": i+1, "error": "No JSON array found"})
+            logging.error(f"No JSON found in model output:\n{model_output}")
             continue
 
         json_str = match.group(1)
 
-        # 4) Parse it
         try:
-            data = json.loads(json_str)
-            if isinstance(data, list):
-                results.extend(data)
-                print(f"Parsed JSON for chunk {i+1}:\n{data}")
-                print(f"Total results so far: {len(results)}")
+            qa_pairs = json.loads(json_str)
+            if isinstance(qa_pairs, list):
+                # Validate structure
+                for pair in qa_pairs:
+                    if isinstance(pair, dict) and "question" in pair and "answer" in pair:
+                        if pair["question"] == pair["answer"]:
+                            logging.info("Warning: Question and answer are identical")
+                        results.append(pair)
+                    else:
+                        logging.warning(f"Skipping malformed pair: {pair}")
             else:
-                print(f"Parsed JSON is not a list: {data}")
-                logging.error(f"Parsed JSON is not a list: {data}")
-                # results.append({"part": i+1, "error": "Parsed JSON is not a list"})
+                logging.warning("Extracted JSON is not a list")
+
         except json.JSONDecodeError as e:
-            logging.error(f"JSON decode error: {e}\nJSON was:\n{json_str}")
-            # results.append({"part": i+1, "error": f"JSON decode error: {e}"})
+            logging.error(f"JSON decoding error: {e}\nText: {json_str}")
 
     return json.dumps(results, indent=4)
+
 
 def generate_q_and_a(request):
     documents_list = ScrapedDataMeta.objects.all().order_by('-created_at')  # Order by latest entries
@@ -220,10 +236,9 @@ def document_detail(request):
                     generated_json_data = json.loads(generated_json_text)
                     request.session['generated_json_combined'] = generated_json_text
 
-                except OpenAIError:
-                    logging.error("OpenAI API quota exceeded or other error.")
-                    generated_json_data = {"error": "OpenAI API quota exceeded"}
-                    request.session['generated_json_combined'] = json.dumps(generated_json_data)
+                except Exception as e:
+                    logging.error(f"Error generating Q&A: {e}")
+                    generated_json_data = {"error": str(e)}
 
     else:
         form = DocumentProcessingForm()
