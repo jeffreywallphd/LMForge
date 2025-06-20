@@ -28,7 +28,18 @@ from huggingface_hub import login
 import transformers
 import re
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Set log file name (in current directory)
+log_file = "application.log"
+
+# Setup logging to file + console
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file, mode='a', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
 
 
 DEFAULT_HF_API_KEY = config("HUGGINGFACE_TOKEN", default="")
@@ -115,26 +126,26 @@ def llama_chat(prompt: str, max_tokens: int = 25):
         return ""
 
 def build_prompt(chunk, questions_num, instruction_prompt=""):
-    instruction_field = ', "instruction": "%s"' % instruction_prompt if instruction_prompt else ""
-    return f"""
-Generate {questions_num} question-answer pairs based on the following text segment. 
-Return the result in valid JSON format as a list of objects.
+    instruction_part = f''', "instruction": "{instruction_prompt.strip()}"''' if instruction_prompt else ""
+    return f"""You are a system that generates question-answer pairs in valid JSON only.
 
-Text Segment:
+Instructions:
+- Generate exactly {questions_num} question-answer pairs.
+- Each answer must be at least 250 words.
+- Output only a valid JSON array of objects.
+- No extra text, no comments, no markdown.
 
-{chunk}
+Input Text:
+\"\"\"{chunk}\"\"\"
 
-Response Format:
+Output format:
 [
-    {{"question": "What is ...?", "answer": "The answer is ..."{instruction_field}}}
+  {{"question": "What is ...?", "answer": "The answer is ..."{instruction_part}}}
 ]
 
-Each answer should be at least 250 words long.
-
-Do NOT include any explanation or preamble before or after the JSON output.
-Return ONLY valid JSON.
-Answer:
+Respond with only valid JSON.
 """
+
 
 def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt=""):
     text_chunks = split_text(text, max_tokens=256)  # Adjust as needed
@@ -148,29 +159,32 @@ def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt=""):
         model_output = llama_chat(strict_prompt, max_tokens=512)
 
         # Try to extract JSON list
-        match = re.search(r'(\[\s*{.*?}\s*\])', model_output, re.DOTALL)
-        if not match:
-            logging.error(f"No JSON found in model output:\n{model_output}")
-            continue
-
-        json_str = match.group(1)
-
-        try:
-            qa_pairs = json.loads(json_str)
-            if isinstance(qa_pairs, list):
-                # Validate structure
-                for pair in qa_pairs:
-                    if isinstance(pair, dict) and "question" in pair and "answer" in pair:
-                        if pair["question"] == pair["answer"]:
-                            logging.info("Warning: Question and answer are identical")
-                        results.append(pair)
-                    else:
-                        logging.warning(f"Skipping malformed pair: {pair}")
+        match = re.search(r'\[\s*{.*?}\s*\]', model_output, re.DOTALL)
+        if match:
+            json_str = match.group(0)
+        else:
+            # Fallback: try cleaning up common LLM quirks
+            cleaned_output = model_output.strip()
+            cleaned_output = cleaned_output.split("```")[0]  # Remove markdown fences
+            cleaned_output = cleaned_output.replace('\n', ' ').replace('\r', '')
+            start = cleaned_output.find('[')
+            end = cleaned_output.rfind(']')
+            if start != -1 and end != -1 and start < end:
+                json_str = cleaned_output[start:end+1]
             else:
-                logging.warning("Extracted JSON is not a list")
+                logging.error(f"Could not find valid JSON in model output:\n{model_output}")
+                continue
 
+        # Try to parse
+        try:
+            data = json.loads(json_str)
+            if isinstance(data, list):
+                results.extend(data)
+            else:
+                logging.warning("Parsed JSON is not a list.")
         except json.JSONDecodeError as e:
-            logging.error(f"JSON decoding error: {e}\nText: {json_str}")
+            logging.error(f"JSON Decode Error: {e}\nProblem JSON:\n{json_str}")
+
 
     return json.dumps(results, indent=4)
 
