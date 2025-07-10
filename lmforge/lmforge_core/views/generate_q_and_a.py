@@ -156,7 +156,7 @@ def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt=""):
         logging.info(f"Processing chunk {i+1}/{total_chunks}")
 
         strict_prompt = build_prompt(chunk, questions_num, instruction_prompt)
-        model_output = llama_chat(strict_prompt, max_tokens=512)
+        model_output = llama_chat(strict_prompt, max_tokens=256)
 
         # Try to extract JSON list
         match = re.search(r'\[\s*{.*?}\s*\]', model_output, re.DOTALL)
@@ -252,7 +252,7 @@ def document_detail(request):
 
                 except Exception as e:
                     logging.error(f"Error generating Q&A: {e}")
-                    generated_json_data = {"error": str(e)}
+                    
 
     else:
         form = DocumentProcessingForm()
