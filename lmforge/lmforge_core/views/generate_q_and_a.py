@@ -59,7 +59,9 @@ logging.info(f"HUGGINGFACE_HUB_CACHE: {os.getenv('HUGGINGFACE_HUB_CACHE')}")
 transformers.utils.hub.TRANSFORMERS_CACHE = "D:/huggingface_cache"
 
 
-model_name = "meta-llama/Meta-Llama-3-8B"
+# model_name = "meta-llama/Meta-Llama-3-8B"
+model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
+
 
 # Load the tokenizer and model
 tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=True)
@@ -131,7 +133,7 @@ def build_prompt(chunk, questions_num, instruction_prompt=""):
 
 Instructions:
 - Generate exactly {questions_num} question-answer pairs.
-- Each answer must be at least 250 words.
+- Each answer must be 200 words or less
 - Output only a valid JSON array of objects.
 - No extra text, no comments, no markdown.
 
