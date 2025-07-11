@@ -1,0 +1,44 @@
+{
+    "Documents/Legal Aspects of Corporate Management and Finance.pdf": [],
+    "Documents/PrinciplesofFinance-WEB.pdf": [
+        {
+            "chunk": "Principles of Finance \n \n \n \n \n \n \n \n \n \nSENIOR CONTRIBUTING AUTHORS \nJULIE DAHLQUIST, TEXAS CHRISTIAN UNIVERSITY \nRAINFORD KNIGHT, FLORIDA ATLANTIC UNIVERSITY \n \n \n \n \n \n \n \n \n \nOpenStax \nRice University \n6100 Main Street MS-375 \nHouston, Texas 77005 \nTo learn more about OpenStax, visit https://openstax.org. \nIndividual print copies and bulk orders can be purchased through our website. \n©2022 Rice University. Textbook content produced by OpenStax is licensed under a Creative Commons \nAttribution 4.0 International License (CC BY 4.0). Under this license, any user of this textbook or the textbook",
+            "qa_pairs": [
+                {
+                    "question": "What is the title of this book?",
+                    "answer": "Principles of Finance"
+                },
+                {
+                    "question": "Who are the authors of this book?",
+                    "answer": "SENIOR CONTRIBUTING AUTHORS JULIE DAHLQUIST, TEXAS CHRISTIAN UNIVERSITY RAINFORD KNIGHT, FLORIDA ATLANTIC UNIVERSITY"
+                }
+            ]
+        },
+        {
+            "chunk": "but not limited to PDF and HTML) and on every physical printed page the following attribution:\n“Access for free at openstax.org.”\n-\nIf you use this textbook as a bibliographic reference, please include\nhttps://openstax.org/details/books/principles-finance in your citation.\nFor questions regarding this licensing, please contact support@openstax.org. \nTrademarks \nThe OpenStax name, OpenStax logo, OpenStax book covers, OpenStax CNX name, OpenStax CNX logo, \nOpenStax Tutor name, Openstax Tutor logo, Connexions name, Connexions logo, Rice University name, and",
+            "qa_pairs": [
+                {
+                    "question": "What is the name of the author?",
+                    "answer": "Rice University"
+                },
+                {
+                    "question": "What is the name of the book?",
+                    "answer": "Principles of Finance"
+                }
+            ]
+        },
+        {
+            "chunk": "initiative based at Rice University, we’re committed to helping students access the tools they need to complete \ntheir courses and meet their educational goals. \n \nRICE UNIVERSITY \n \nOpenStax, OpenStax CNX, and OpenStax Tutor are initiatives of Rice University. As a leading research university \nwith a distinctive commitment to undergraduate education, Rice University aspires to path-breaking research, \nunsurpassed teaching, and contributions to the betterment of our world. It seeks to fulfill this mission by \ncultivating a diverse community of learning and discovery that produces leaders across the spectrum of human \nendeavor.",
+            "qa_pairs": [
+                {
+                    "question": "What is the name of the university where OpenStax is based?",
+                    "answer": "Rice University"
+                },
+                {
+                    "question": "What is the name of the university where OpenStax is based?",
+                    "answer": "Rice University"
+                }
+            ]
+        }
+    ]
+}

@@ -20,16 +20,68 @@ import io
 import csv
 from huggingface_hub import HfApi
 from datasets import Dataset
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import os
+import logging
+from huggingface_hub import login
+import transformers
+import re
+# Set up logging
+# Set log file name (in current directory)
+log_file = "application.log"
 
-client = OpenAI(
-    api_key=config('OPENAI_API_KEY', default=""),
+# Setup logging to file + console
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file, mode='a', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
 )
-DEFAULT_HF_API_KEY = config("HF_API_KEY", default="")
 
-# Tokenizer function (GPT-4 uses "cl100k_base" tokenizer)
+
+DEFAULT_HF_API_KEY = config("HUGGINGFACE_TOKEN", default="")
+# setting huggingface token
+# setting huggingface token
+login(token=DEFAULT_HF_API_KEY)
+
+os.environ["HF_HOME"] = "D:/huggingface_cache" 
+os.environ["TRANSFORMERS_CACHE"] = "D:/huggingface_cache"
+os.environ["HUGGINGFACE_HUB_CACHE"] = "D:/huggingface_cache"
+logging.info(f"Setting up Hugging Face environment variables...")
+
+logging.info(f"HF_HOME: {os.getenv('HF_HOME')}")
+logging.info(f"TRANSFORMERS_CACHE: {os.getenv('TRANSFORMERS_CACHE')}")
+logging.info(f"HUGGINGFACE_HUB_CACHE: {os.getenv('HUGGINGFACE_HUB_CACHE')}")
+
+transformers.utils.hub.TRANSFORMERS_CACHE = "D:/huggingface_cache"
+
+
+# model_name = "meta-llama/Meta-Llama-3-8B"
+model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
+
+
+# Load the tokenizer and model
+tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=True)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token  # Set pad token to eos token if not set
+
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    torch_dtype=torch.float16,
+    device_map="cuda",
+    low_cpu_mem_usage=True,
+    trust_remote_code=True
+)
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model.to(device)
+
+# Tokenizer function to count tokens in a text
 def count_tokens(text):
-    enc = tiktoken.get_encoding("cl100k_base")
-    return len(enc.encode(text))
+    return len(tokenizer.encode(text))
 
 
 # Function to split text into segments while respecting token limits
@@ -54,86 +106,90 @@ def split_text(text, max_tokens=1000):
 
     return chunks
 
+def llama_chat(prompt: str, max_tokens: int = 25): 
+    try:
+        inputs = tokenizer(prompt, return_tensors="pt").to(device)
+        with torch.no_grad():
+            output_tokens = model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                pad_token_id=tokenizer.eos_token_id
+            )
+        generated_tokens = output_tokens[0][len(inputs["input_ids"][0]):]
+        generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+
+        logging.info(f"Generated text: {generated_text}")
+
+        # Try extracting JSON manually in extract_qa — don't parse here
+        return generated_text
+
+    except Exception as e:
+        logging.error(f"Error in llama_chat: {e}")
+        return ""
+
+def build_prompt(chunk, questions_num, instruction_prompt=""):
+    instruction_part = f''', "instruction": "{instruction_prompt.strip()}"''' if instruction_prompt else ""
+    return f"""You are a system that generates question-answer pairs in valid JSON only.
+
+Instructions:
+- Generate exactly {questions_num} question-answer pairs.
+- Each answer must be 200 words or less
+- Output only a valid JSON array of objects.
+- No extra text, no comments, no markdown.
+
+Input Text:
+\"\"\"{chunk}\"\"\"
+
+Output format:
+[
+  {{"question": "What is ...?", "answer": "The answer is ..."{instruction_part}}}
+]
+
+Respond with only valid JSON.
+"""
 
 
-
-def extract_qa(text, chunk_limit, model="gpt-4", questions_num=1, instruction_prompt=""):
-    text_chunks = split_text(text, max_tokens=1000)  # Adjust chunk size
+def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt=""):
+    text_chunks = split_text(text, max_tokens=256)  # Adjust as needed
     results = []
-
     total_chunks = len(text_chunks)
 
     for i, chunk in enumerate(text_chunks[:chunk_limit]):
-        print(f'Total {total_chunks}, finished {i + 1}')
+        logging.info(f"Processing chunk {i+1}/{total_chunks}")
 
-        instruction_prompt_preamble = ""
-        instruction_prompt_details = ""
+        strict_prompt = build_prompt(chunk, questions_num, instruction_prompt)
+        model_output = llama_chat(strict_prompt, max_tokens=256)
 
-        if instruction_prompt:
-            instruction_prompt_preamble = "Include an instruction prompt for each question-answer pair. The instruction prompt should be different for each question, but have the same meaning as the base instruction prompt."
-            instruction_prompt_details = f"""
-            Base Instruction Prompt:
-            {instruction_prompt}
-            """
-
-            response_format = f"""
-            [
-                {{"input": "What is ...?", "output": "The answer is ...", "instruction": "You are a ..."}},
-                {{"input": "How does ... work?", "output": "It works by ...", "instruction": "Answer questions as though you are a..."}}
-            ]
-            """
+        # Try to extract JSON list
+        match = re.search(r'\[\s*{.*?}\s*\]', model_output, re.DOTALL)
+        if match:
+            json_str = match.group(0)
         else:
-            response_format = f"""        
-            [
-                {{"input": "What is ...?", "output": "The answer is ..."}},
-                {{"input": "How does ... work?", "output": "It works by ..."}}
-            ]
-            """
-
-        prompt = f"""
-        Generate {questions_num} question-answer pairs based on the following text segment. 
-        Return the result in valid JSON format as a list of objects. {instruction_prompt_preamble}
-
-        Text Segment:
-        {chunk}
-
-        {instruction_prompt_details}
-        
-        Response Format:
-        {response_format}
-
-        Return ONLY valid JSON output.
-        """
-
-        #print(prompt)
-
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.5
-        )
-
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.5
-            )
-
-            json_data = json.loads(response.choices[0].message.content.strip())
-
-            if isinstance(json_data, list):  
-                results.extend(json_data)
+            # Fallback: try cleaning up common LLM quirks
+            cleaned_output = model_output.strip()
+            cleaned_output = cleaned_output.split("```")[0]  # Remove markdown fences
+            cleaned_output = cleaned_output.replace('\n', ' ').replace('\r', '')
+            start = cleaned_output.find('[')
+            end = cleaned_output.rfind(']')
+            if start != -1 and end != -1 and start < end:
+                json_str = cleaned_output[start:end+1]
             else:
-                results.append({"error": "Unexpected JSON format"})
+                logging.error(f"Could not find valid JSON in model output:\n{model_output}")
+                continue
 
-        except json.JSONDecodeError:
-            results.append({"part": i + 1, "error": "Invalid JSON response"})
-        
-        except OpenAIError as e:
-            return json.dumps({"error": f"OpenAI API Error: {str(e)}"}, indent=4)
+        # Try to parse
+        try:
+            data = json.loads(json_str)
+            if isinstance(data, list):
+                results.extend(data)
+            else:
+                logging.warning("Parsed JSON is not a list.")
+        except json.JSONDecodeError as e:
+            logging.error(f"JSON Decode Error: {e}\nProblem JSON:\n{json_str}")
+
 
     return json.dumps(results, indent=4)
+
 
 def generate_q_and_a(request):
     documents_list = ScrapedDataMeta.objects.all().order_by('-created_at')  # Order by latest entries
@@ -187,6 +243,7 @@ def document_detail(request):
                     generated_json_data = json.loads(generated_json_text)
                     request.session[f'generated_json_combined'] = generated_json_text
                 except (FileNotFoundError, json.JSONDecodeError):
+                    logging.error(f"Error reading mock-up JSON file: {json_file_path}")
                     generated_json_data = {"error": "Mock-up JSON file not found or invalid"}
             
             else:
@@ -195,9 +252,9 @@ def document_detail(request):
                     generated_json_data = json.loads(generated_json_text)
                     request.session['generated_json_combined'] = generated_json_text
 
-                except OpenAIError:
-                    generated_json_data = {"error": "OpenAI API quota exceeded"}
-                    request.session['generated_json_combined'] = json.dumps(generated_json_data)
+                except Exception as e:
+                    logging.error(f"Error generating Q&A: {e}")
+                    
 
     else:
         form = DocumentProcessingForm()
