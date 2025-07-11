@@ -59,7 +59,9 @@ logging.info(f"HUGGINGFACE_HUB_CACHE: {os.getenv('HUGGINGFACE_HUB_CACHE')}")
 transformers.utils.hub.TRANSFORMERS_CACHE = "D:/huggingface_cache"
 
 
-model_name = "meta-llama/Meta-Llama-3-8B"
+# model_name = "meta-llama/Meta-Llama-3-8B"
+model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
+
 
 # Load the tokenizer and model
 tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=True)
@@ -131,7 +133,7 @@ def build_prompt(chunk, questions_num, instruction_prompt=""):
 
 Instructions:
 - Generate exactly {questions_num} question-answer pairs.
-- Each answer must be at least 250 words.
+- Each answer must be 200 words or less
 - Output only a valid JSON array of objects.
 - No extra text, no comments, no markdown.
 
@@ -156,7 +158,7 @@ def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt=""):
         logging.info(f"Processing chunk {i+1}/{total_chunks}")
 
         strict_prompt = build_prompt(chunk, questions_num, instruction_prompt)
-        model_output = llama_chat(strict_prompt, max_tokens=512)
+        model_output = llama_chat(strict_prompt, max_tokens=256)
 
         # Try to extract JSON list
         match = re.search(r'\[\s*{.*?}\s*\]', model_output, re.DOTALL)
@@ -252,7 +254,7 @@ def document_detail(request):
 
                 except Exception as e:
                     logging.error(f"Error generating Q&A: {e}")
-                    generated_json_data = {"error": str(e)}
+                    
 
     else:
         form = DocumentProcessingForm()
