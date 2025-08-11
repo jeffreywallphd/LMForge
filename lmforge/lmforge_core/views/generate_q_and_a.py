@@ -42,7 +42,7 @@ logging.basicConfig(
 )
 
 
-DEFAULT_HF_API_KEY = config("HUGGINGFACE_TOKEN", default="")
+DEFAULT_HF_API_KEY = config("HF_API_KEY", default="")
 # setting huggingface token
 # setting huggingface token
 login(token=DEFAULT_HF_API_KEY)

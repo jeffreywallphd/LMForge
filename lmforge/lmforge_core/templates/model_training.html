@@ -6,7 +6,7 @@
 {% block content %}
 
 <h1>Configure Model Training</h1>
-<form method="POST" action="">
+<form method="POST" action="" id="train-form">
     {% csrf_token %}
     <label for="model_name">Model Name</label>
     <select id="model_name" name="model_name">
@@ -14,7 +14,12 @@
         <option value="HuggingFaceTB/SmolLM2-360M-Instruct">SmolLM2-360M-Instruct</option>
         <option value="apple/OpenELM-270M-Instruct">apple/OpenELM-270M-Instruct</option>
         <option value="facebook/opt-350m">FACEBOOK-OPT-350M</option>
+        <option value="meta-llama/Llama-3.2-1B-Instruct">meta-llama/Llama-3.2-1B-Instruct</option>
+        <option value="meta-llama/Llama-3.2-3B-Instruct">meta-llama/Llama-3.2-3B-Instruct</option>
+        <option value="google/gemma-2-2b-it">google/gemma-2-2b-it</option>
+        <option value="other">Other</option>
     </select>
+    <input type="text" id="custom_model_name" name="custom_model_name" placeholder="e.g., meta-llama/Llama-3-8b">
     <br>
 
     <label for="learning_rate">Learning Rate:</label>
@@ -52,6 +57,12 @@
     <input type="hidden" id="fp16" name="fp16" value="off">
     <input type="hidden" id="bf16" name="bf16" value="off">
     <br>
+
+    <label for="use_lora">Use LoRA:</label>
+    <input type="checkbox" name="use_lora">
+
+    <label for="use_qlora">Use QLoRA (for models ≥1.3B parameters):</label>
+    <input type="checkbox" name="use_qlora">
 
     <label for="project_name">W&B Project Name:</label>
     <input type="text" name="project_name" value="your_project_name">
@@ -104,15 +115,35 @@
             document.getElementById('bf16').value = (precision === 'bf16') ? 'on' : 'off';
         });
 
-        // Ensure the form has an ID (if missing)
-        let form = document.querySelector("form");
-        if (!form.id) form.setAttribute("id", "train-form");
+         // Handle model name selection to show/hide custom model input
+        const modelNameSelect = document.getElementById('model_name');
+        const customModelInput = document.getElementById('custom_model_name');
+        customModelInput.style.display = 'none'; // Hide by default
+        modelNameSelect.addEventListener('change', function () {
+            if (this.value === 'other') {
+                customModelInput.style.display = 'block';
+            } else {
+                customModelInput.style.display = 'none';
+                customModelInput.value = ''; // Clear custom input when not in use
+            }
+        });
 
+        const form = document.getElementById("train-form");
         const logContainer = document.getElementById("log-container");
         let eventSource;
 
         form.addEventListener("submit", function (event) {
             event.preventDefault(); // Prevent default form submission
+
+            // If "Other" is selected, use custom_model_name as model_name
+            if (modelNameSelect.value === 'other') {
+                const customModelName = customModelInput.value.trim();
+                if (!customModelName) {
+                    logContainer.textContent = "❌ Error: Please enter a valid model name.\n";
+                    return;
+                }
+                modelNameSelect.value = customModelName; // Override model_name with custom input
+            }
 
             logContainer.textContent = "🚀 Training started...\n"; // Reset logs
 

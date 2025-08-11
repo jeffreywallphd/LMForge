@@ -237,7 +237,7 @@ button:hover, .button:hover {
     font-size: 20px;
     cursor: pointer;
 }
-
+                
 #menu {
     transition: margin-left 0.3s ease-in-out; /* Match sidebar transition */
 }
@@ -253,3 +253,6 @@ button:hover, .button:hover {
     padding: 10px 10px 10px 0px;
 }
 
+#custom_model_name {
+    display: none;
+}

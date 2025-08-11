@@ -14,6 +14,9 @@
         <option value="HuggingFaceTB/SmolLM2-360M-Instruct">SmolLM2-360M-Instruct</option>
         <option value="apple/OpenELM-270M-Instruct">apple/OpenELM-270M-Instruct</option>
         <option value="facebook/opt-350m">FACEBOOK-OPT-350M</option>
+        <option value="meta-llama/Llama-3.2-1B-Instruct">meta-llama/Llama-3.2-1B-Instruct</option>
+        <option value="meta-llama/Llama-3.2-3B-Instruct">meta-llama/Llama-3.2-3B-Instruct</option>
+        <option value="google/gemma-2-2b-it">google/gemma-2-2b-it</option>
     </select>
     <br>
 
@@ -51,6 +54,13 @@
     <input type="hidden" id="fp16" name="fp16" value="off">
     <input type="hidden" id="bf16" name="bf16" value="off">
     <br>
+
+    <label for="use_lora">Use LoRA:</label>
+    <input type="checkbox" name="use_lora">
+
+    <label for="use_qlora">Use QLoRA (for models ≥1.3B parameters):</label>
+    <input type="checkbox" name="use_qlora">
+
 
     <label for="project_name">W&B Project Name:</label>
     <input type="text" name="project_name" value="your_project_name">
