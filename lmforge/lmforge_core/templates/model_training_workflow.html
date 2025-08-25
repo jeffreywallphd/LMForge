@@ -110,17 +110,24 @@
 <div id="log-container">Waiting for logs...</div>
 
 <script>
+
     let eventSource;
 
     // Precision Handling Logic
-    document.getElementById('fp16').value = 'off';
-    document.getElementById('bf16').value = 'off';
+    const fp16El = document.getElementById('fp16');
+    const bf16El = document.getElementById('bf16');
+    const precisionEl = document.getElementById('precision');
 
-    document.getElementById('precision').addEventListener('change', function () {
-        const precision = this.value;
-        document.getElementById('fp16').value = (precision === 'fp16') ? 'on' : 'off';
-        document.getElementById('bf16').value = (precision === 'bf16') ? 'on' : 'off';
-    });
+    if (fp16El) fp16El.value = 'off';
+    if (bf16El) bf16El.value = 'off';
+
+    if (precisionEl) {
+        precisionEl.addEventListener('change', function () {
+            const precision = this.value;
+            if (fp16El) fp16El.value = (precision === 'fp16') ? 'on' : 'off';
+            if (bf16El) bf16El.value = (precision === 'bf16') ? 'on' : 'off';
+        });
+    }
 
     async function startTraining(event) {
         event.preventDefault();
@@ -152,7 +159,7 @@
                 logContainer.textContent += "✅ Training initiated successfully.\n";
                 trainingInProgress = true;
                 console.log("Training started, enabling stop button");
-                document.getElementById("stopTrainingBtn").disabled = false;
+                // document.getElementById("stopTrainingBtn").disabled = false;
                 
                 await startLogStreaming();
 
@@ -167,11 +174,8 @@
     }
 
     function startLogStreaming() {
-        const logContainer = document.getElementById("log-container");
-        if (eventSource) {
-            eventSource.close();
-        }
-
+        if (eventSource) eventSource.close();
+        logContainer = document.getElementById("log-container");
         eventSource = new EventSource("/api/stream_training/");
 
         return new Promise((resolve) => {
@@ -216,8 +220,7 @@
         const resultContainer = document.getElementById("last-four-model-stats");
         const datasetName = document.getElementById("dataset_name").value.trim();
         const modelName = document.getElementById("model_name").value.trim();
-
-        if (!datasetName && !modelName) {
+        if (!datasetName && !modelName ) {
             alert("Please enter either a dataset name, a model name, or both to fetch statistics!");
             return;
         }
@@ -313,6 +316,8 @@
     window.location.href = url;
     }
 
+    fetchLastFourModelStats();
+   
 </script>
 
 {% endblock %}
