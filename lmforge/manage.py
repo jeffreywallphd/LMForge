@@ -15,6 +15,11 @@ def main():
             "available on your PYTHONPATH environment variable? Did you "
             "forget to activate a virtual environment?"
         ) from exc
+    
+    # Prevents Django's auto-reloader from running if `runserver` is used
+    if "runserver" in sys.argv and "--noreload" not in sys.argv:
+        sys.argv.append("--noreload")
+
     execute_from_command_line(sys.argv)
 
 

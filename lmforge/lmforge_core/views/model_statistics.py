@@ -13,6 +13,7 @@ from io import StringIO
 import random
 from sentence_transformers import CrossEncoder
 
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def cal_sts_score(input1, input2):
@@ -24,7 +25,6 @@ def cal_sts_score(input1, input2):
     sentence_combinations = [[input1, input2]]
     sts_score = round(model.predict(sentence_combinations)[0], 4)  # Extract score
     return sts_score
-
 
 def model_stats(prompt, model_name, max_length=200, min_length=100, top_k=50, top_p=0.95, max_new_tokens=300, no_repeat_ngrams=0, references=[]):
     try:
@@ -75,10 +75,10 @@ def model_stats(prompt, model_name, max_length=200, min_length=100, top_k=50, to
         rouge_scores = rouge_metric.compute(predictions=predictions, references=references)
         bertscore_scores = bertscore_metric.compute(predictions=predictions, references=references,lang="en",device=device) 
         sts_score = cal_sts_score(response, references[0])
-        
+
         print(f"ROUGE scores: {rouge_scores}")
         print(f"BERTScore scores: {bertscore_scores}")
-        print(f"STS Score: {sts_score}")
+        print(f"STS score: {sts_score}")
 
         return {
             "ROUGE1" : rouge_scores.get("rouge1",0),
@@ -138,6 +138,22 @@ class ModelStatisticsView(APIView):
             # convert into dataframe 
             df = pd.DataFrame(df)
             print(f"Dataset loaded: {df}")
+            # print(f"Dataset loaded: {df}")
+
+            # if "input" not in df.columns or "output" not in df.columns:
+            #     return Response({"error": "Dataset must contain 'input' and 'output' columns."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # df.dropna(subset=["input", "output"], inplace=True)
+
+            # if df.empty:
+            #     return Response({"error": "Dataset is empty after filtering."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+            # # Randomly sample N questions
+            # num_questions = min(num_questions, len(df))
+            # sampled_data = df.sample(n=num_questions, random_state = 42)
+            # questions = sampled_data["input"].tolist()
+            # references = sampled_data["output"].tolist()
 
             possible_input_names = {"input", "Input", "question", "Question"}
             possible_output_names = {"output", "Output", "answer", "Answer"}
@@ -162,6 +178,7 @@ class ModelStatisticsView(APIView):
             # Use the detected column names
             questions = sampled_data[input_col].tolist()
             references = sampled_data[output_col].tolist()        
+
         except Exception as e:
             return Response({"error": f"Error loading dataset: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
