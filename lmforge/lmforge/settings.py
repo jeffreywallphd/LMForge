@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 import os
 from pathlib import Path
 from decouple import config  # type: ignore
+import sys
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,7 +33,7 @@ SECRET_KEY = 'django-insecure-b+^m=s@bp0kja%89+xfd+(5s9p5q^_&wxju#-#&6d1g&w=s3wz
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]
 
 
 # Application definition
@@ -90,20 +91,6 @@ TEMPLATES = [
 WSGI_APPLICATION = 'lmforge.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',  
-        'NAME': config('DATABASE_NAME'),
-        'USER': config('DATABASE_USER'),
-        'PASSWORD': config('DATABASE_PASSWORD'),
-        'HOST': config('DATABASE_HOST'),
-        'PORT': config('DATABASE_PORT', default=3306, cast=int),
-    }
-}
-
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
@@ -147,3 +134,43 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+
+
+# Database
+# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
+DB_NAME = config('DATABASE_NAME', default='')
+DB_USER = config('DATABASE_USER', default='')
+DB_PASSWORD = config('DATABASE_PASSWORD', default='')
+DB_HOST = config('DATABASE_HOST', default='')
+DB_PORT = config('DATABASE_PORT', default='3306')
+
+def _looks_placeholder(v: str) -> bool:
+    v = (v or '').strip().lower()
+    return v in {'', 'password', 'changeme', 'your_db', 'your_user', 'localhost'}
+
+# Only allow fallback in dev
+RUNNING_DEV_SERVER = 'runserver' in sys.argv
+MISSING_OR_PLACEHOLDER = (
+    _looks_placeholder(DB_NAME) or
+    _looks_placeholder(DB_USER) or
+    _looks_placeholder(DB_HOST) or
+    DB_PASSWORD.strip() == ''   # allow empty password 
+)
+
+USE_SQLITE_FALLBACK = DEBUG and (RUNNING_DEV_SERVER or 'migrate' in sys.argv) and MISSING_OR_PLACEHOLDER
+
+if USE_SQLITE_FALLBACK:
+    print("Update your .env to connect to MySQL.")
+    DATABASES = {}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': DB_NAME,
+            'USER': DB_USER,
+            'PASSWORD': DB_PASSWORD,
+            'HOST': DB_HOST,
+            'PORT': DB_PORT,
+        }
+    }
