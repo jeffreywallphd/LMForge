@@ -31,9 +31,9 @@ def create_env_file():
 
 
 def maybe_auto_update():
-    """Optionally fast-forward the working copy before running Django commands.
+    """Fast-forward the working copy before running Django (dev-only).
 
-    Enabled only when DJANGO_AUTO_UPDATE=1 and when using 'runserver' or 'migrate'.
+    Runs only when DJANGO_AUTO_UPDATE=1 and when using 'runserver' or 'migrate'.
     Skips if:
       - not a git repo,
       - git is not installed,
@@ -41,18 +41,19 @@ def maybe_auto_update():
       - no upstream is configured,
       - a fast-forward is not possible.
     """
+    import os, sys
     if os.environ.get("DJANGO_AUTO_UPDATE") != "1":
+        print("[auto-update] DJANGO_AUTO_UPDATE not set; skipping.")
         return
     if not any(cmd in sys.argv for cmd in ("runserver", "migrate")):
+        print("[auto-update] Not runserver/migrate; skipping.")
         return
 
     repo_root = Path(__file__).resolve().parent
     def run(cmd):
-        print(f"[auto-update] Running: {' '.join(cmd)}")
         return subprocess.run(cmd, cwd=repo_root, text=True,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
-    # Ensure git exists and we're in a repo
     try:
         check = run(["git", "rev-parse", "--is-inside-work-tree"])
         if check.returncode != 0:
@@ -62,24 +63,20 @@ def maybe_auto_update():
         print("[auto-update] Git not installed; skipping.")
         return
 
-    # Avoid clobbering local edits
     status = run(["git", "status", "--porcelain"])
     if status.stdout.strip():
         print("[auto-update] Working tree has local changes; skipping.")
         return
 
-    # Make sure we have an upstream
     upstream = run(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
     if upstream.returncode != 0:
-        print("[auto-update] No upstream configured for current branch; skipping.")
+        print("[auto-update] No upstream configured; skipping.")
         return
 
-    # Fetch and attempt fast-forward only
     print("[auto-update] Fetching…")
-    run(["git", "fetch", "--prune", "--tags"])
+    print(run(["git", "fetch", "--prune", "--tags"]).stdout)
     print("[auto-update] Pulling (fast-forward only)…")
-    pulled = run(["git", "pull", "--ff-only"])
-    print(pulled.stdout.strip() or "[auto-update] Up to date.")
+    print(run(["git", "pull", "--ff-only"]).stdout or "[auto-update] Up to date.")
 
 
 def main():
