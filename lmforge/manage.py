@@ -3,6 +3,7 @@
 import os
 import sys
 from pathlib import Path
+import subprocess
 
 def create_env_file():
     # Create a .env file from .env.example if it doesn't exist
@@ -28,6 +29,59 @@ def create_env_file():
             )
             print(".env file was missing, created with Temp default.")
 
+
+def maybe_auto_update():
+    """Optionally fast-forward the working copy before running Django commands.
+
+    Enabled only when DJANGO_AUTO_UPDATE=1 and when using 'runserver' or 'migrate'.
+    Skips if:
+      - not a git repo,
+      - git is not installed,
+      - there are local (uncommitted) changes,
+      - no upstream is configured,
+      - a fast-forward is not possible.
+    """
+    if os.environ.get("DJANGO_AUTO_UPDATE") != "1":
+        return
+    if not any(cmd in sys.argv for cmd in ("runserver", "migrate")):
+        return
+
+    repo_root = Path(__file__).resolve().parent
+    def run(cmd):
+        print(f"[auto-update] Running: {' '.join(cmd)}")
+        return subprocess.run(cmd, cwd=repo_root, text=True,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+    # Ensure git exists and we're in a repo
+    try:
+        check = run(["git", "rev-parse", "--is-inside-work-tree"])
+        if check.returncode != 0:
+            print("[auto-update] Not a git repo; skipping.")
+            return
+    except FileNotFoundError:
+        print("[auto-update] Git not installed; skipping.")
+        return
+
+    # Avoid clobbering local edits
+    status = run(["git", "status", "--porcelain"])
+    if status.stdout.strip():
+        print("[auto-update] Working tree has local changes; skipping.")
+        return
+
+    # Make sure we have an upstream
+    upstream = run(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+    if upstream.returncode != 0:
+        print("[auto-update] No upstream configured for current branch; skipping.")
+        return
+
+    # Fetch and attempt fast-forward only
+    print("[auto-update] Fetching…")
+    run(["git", "fetch", "--prune", "--tags"])
+    print("[auto-update] Pulling (fast-forward only)…")
+    pulled = run(["git", "pull", "--ff-only"])
+    print(pulled.stdout.strip() or "[auto-update] Up to date.")
+
+
 def main():
     """Run administrative tasks."""
     create_env_file()
@@ -44,6 +98,8 @@ def main():
     # Prevents Django's auto-reloader from running if `runserver` is used
     if "runserver" in sys.argv and "--noreload" not in sys.argv:
         sys.argv.append("--noreload")
+
+    maybe_auto_update()
 
     execute_from_command_line(sys.argv)
 
