@@ -3,6 +3,7 @@
 import os
 import sys
 from pathlib import Path
+import subprocess
 
 def create_env_file():
     # Create a .env file from .env.example if it doesn't exist
@@ -28,6 +29,56 @@ def create_env_file():
             )
             print(".env file was missing, created with Temp default.")
 
+
+def maybe_auto_update():
+    """Fast-forward the working copy before running Django (dev-only).
+
+    Runs only when DJANGO_AUTO_UPDATE=1 and when using 'runserver' or 'migrate'.
+    Skips if:
+      - not a git repo,
+      - git is not installed,
+      - there are local (uncommitted) changes,
+      - no upstream is configured,
+      - a fast-forward is not possible.
+    """
+    import os, sys
+    if os.environ.get("DJANGO_AUTO_UPDATE") != "1":
+        print("[auto-update] DJANGO_AUTO_UPDATE not set; skipping.")
+        return
+    if not any(cmd in sys.argv for cmd in ("runserver", "migrate")):
+        print("[auto-update] Not runserver/migrate; skipping.")
+        return
+
+    repo_root = Path(__file__).resolve().parent
+    def run(cmd):
+        return subprocess.run(cmd, cwd=repo_root, text=True,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+    try:
+        check = run(["git", "rev-parse", "--is-inside-work-tree"])
+        if check.returncode != 0:
+            print("[auto-update] Not a git repo; skipping.")
+            return
+    except FileNotFoundError:
+        print("[auto-update] Git not installed; skipping.")
+        return
+
+    status = run(["git", "status", "--porcelain"])
+    if status.stdout.strip():
+        print("[auto-update] Working tree has local changes; skipping.")
+        return
+
+    upstream = run(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+    if upstream.returncode != 0:
+        print("[auto-update] No upstream configured; skipping.")
+        return
+
+    print("[auto-update] Fetching…")
+    print(run(["git", "fetch", "--prune", "--tags"]).stdout)
+    print("[auto-update] Pulling (fast-forward only)…")
+    print(run(["git", "pull", "--ff-only"]).stdout or "[auto-update] Up to date.")
+
+
 def main():
     """Run administrative tasks."""
     create_env_file()
@@ -45,8 +96,14 @@ def main():
     if "runserver" in sys.argv and "--noreload" not in sys.argv:
         sys.argv.append("--noreload")
 
+    maybe_auto_update()
+
     execute_from_command_line(sys.argv)
 
 
 if __name__ == '__main__':
     main()
+
+
+
+
