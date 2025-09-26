@@ -11,8 +11,6 @@ from ..models.scraped_data import ScrapedData  # Import the model to save data
 import pdfplumber
 import markdown
 from transformers import pipeline
-# Make sure to import urlparse
-from urllib.parse import urlparse
 
 from django.conf import settings
 from django.conf.urls.static import static
@@ -21,136 +19,86 @@ class ScrapeDataView(APIView):
     def get(self, request):
         url = request.GET.get('url')
         title = request.GET.get('title')
-
+        print(title)
         if not url:
             return Response({'error': 'Please provide a URL.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Fetch the data from the URL
+            response = requests.get(url)
+            response.raise_for_status()  # Raise an error for bad status codes
+        except requests.RequestException as e:
+            return Response({'error': f'Failed to retrieve data from the URL. Error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Detect the content type
+        content_type = response.headers.get('Content-Type', '').lower()
 
         # Initialize variables for content storage
         scraped_content = None
         binary_content = None
         file_type = None
 
-        # --- START: Reddit API Integration ---
-        parsed_url = urlparse(url)
-        if 'reddit.com' in parsed_url.netloc:
-            # Convert the regular Reddit URL to its JSON API equivalent
-            api_url = url.rstrip('/') + ".json"
+        if 'application/json' in content_type:
+            file_type = 'json'
+            scraped_content = json.dumps(response.json(), indent=4)  # Convert JSON to string
 
+        elif 'application/xml' in content_type or 'text/xml' in content_type:
+            file_type = 'xml'
+            scraped_content = response.content.decode('utf-8')  # Decode XML content
+
+        elif 'text/plain' in content_type:
+            file_type = 'text'
+            scraped_content = response.content.decode('utf-8')  # Decode plain text content
+
+        elif 'text/html' in content_type:
+            file_type = 'html'
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            for script in soup(["script", "style", "meta", "noscript"]):
+                script.extract()
+
+            main_content = soup.find("article")  
+            if not main_content:
+                main_content = soup.find("div", {"class": "content"}) 
+            
+            if main_content:
+                scraped_content = main_content.get_text(separator="\n", strip=True)  
+            else:
+                scraped_content = soup.get_text(separator="\n", strip=True) 
+
+            scraped_content = "\n".join([line.strip() for line in scraped_content.split("\n") if line.strip()])
+
+        elif 'text/csv' in content_type or 'application/csv' in content_type:
+            file_type = 'csv'
+            scraped_content = response.content.decode('utf-8')  # Decode CSV content
+
+        elif 'application/vnd.ms-excel' in content_type or 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' in content_type:
+            file_type = 'xlsx'
+
+            # For xlsx, we store the binary content
             try:
-                # Reddit's API requires a custom User-Agent header
-                headers = {'User-Agent': 'My-Django-Scraper-App/1.1'}
-                response = requests.get(api_url, headers=headers)
-                response.raise_for_status()
-                data = response.json()
-
-                # LOGIC 1: Handle a specific post URL (contains /comments/)
-                if '/comments/' in parsed_url.path:
-                    file_type = 'reddit_post'
-                    
-                    # The response is a list containing post data and then comment data
-                    post_data = data[0]['data']['children'][0]['data']
-                    post_title = post_data.get('title', 'No Title')
-                    post_author = post_data.get('author', 'Unknown Author')
-                    post_text = post_data.get('selftext', 'No content text.')
-                    
-                    content_lines = [
-                        f"Title: {post_title}",
-                        f"Author: u/{post_author}",
-                        "--- POST CONTENT ---",
-                        post_text,
-                        "\n--- COMMENTS ---"
-                    ]
-
-                    comments_data = data[1]['data']['children']
-                    for comment in comments_data:
-                        if 'data' in comment and 'body' in comment['data']:
-                            comment_author = comment['data'].get('author', 'Unknown')
-                            comment_body = comment['data'].get('body', '')
-                            content_lines.append(f"\n> u/{comment_author}:\n{comment_body}\n")
-                    
-                    scraped_content = "\n".join(content_lines)
-
-                # LOGIC 2: Handle a subreddit URL (e.g., /r/Python/)
-                elif parsed_url.path.startswith('/r/'):
-                    file_type = 'reddit_subreddit'
-                    
-                    subreddit_name = parsed_url.path.split('/')[2]
-                    posts = data['data']['children']
-                    
-                    content_lines = [f"Scraped Posts from r/{subreddit_name}:\n---"]
-                    for i, post_item in enumerate(posts):
-                        post_data = post_item['data']
-                        post_title = post_data.get('title', 'No Title')
-                        post_author = post_data.get('author', 'Unknown')
-                        content_lines.append(f"{i+1}. {post_title} (by u/{post_author})")
-                    
-                    scraped_content = "\n".join(content_lines)
-
-                # LOGIC 3: Invalid Reddit URL
-                else:
-                    return Response({
-                        'error': 'This appears to be a Reddit URL, but not a valid post or subreddit page. Please provide a URL for a specific post or a subreddit (e.g., https://www.reddit.com/r/python/).'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-
-            except requests.RequestException as e:
-                return Response({'error': f'Failed to retrieve data from Reddit API. Error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
-            except (KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
-                 return Response({'error': f'Failed to parse Reddit API response. Ensure the URL is a valid, public post or subreddit. Error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        # --- END: Reddit API Integration ---
+                binary_content = response.content  # Store the binary content as is
+            except Exception as e:
+                return Response({'error': f'Error processing xlsx file: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         else:
-            # Original code for handling all other non-Reddit URLs
-            try:
-                response = requests.get(url)
-                response.raise_for_status()
-            except requests.RequestException as e:
-                return Response({'error': f'Failed to retrieve data from the URL. Error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
-
-            content_type = response.headers.get('Content-Type', '').lower()
-
-            if 'application/json' in content_type:
-                file_type = 'json'
-                scraped_content = json.dumps(response.json(), indent=4)
-            elif 'application/xml' in content_type or 'text/xml' in content_type:
-                file_type = 'xml'
-                scraped_content = response.content.decode('utf-8')
-            elif 'text/plain' in content_type:
-                file_type = 'text'
-                scraped_content = response.content.decode('utf-8')
-            elif 'text/html' in content_type:
-                file_type = 'html'
-                soup = BeautifulSoup(response.content, 'html.parser')
-                for script in soup(["script", "style", "meta", "noscript"]):
-                    script.extract()
-                main_content = soup.find("article")
-                if not main_content:
-                    main_content = soup.find("div", {"class": "content"})
-                if main_content:
-                    scraped_content = main_content.get_text(separator="\n", strip=True)
-                else:
-                    scraped_content = soup.get_text(separator="\n", strip=True)
-                scraped_content = "\n".join([line.strip() for line in scraped_content.split("\n") if line.strip()])
-            elif 'text/csv' in content_type or 'application/csv' in content_type:
-                file_type = 'csv'
-                scraped_content = response.content.decode('utf-8')
-            elif 'application/vnd.ms-excel' in content_type or 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' in content_type:
-                file_type = 'xlsx'
-                binary_content = response.content
-            else:
-                return Response({'error': f'Unsupported content type: {content_type}'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': f'Unsupported content type: {content_type}'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Save the scraped data to the database
-        ScrapedData.objects.create(
+        scraped_data = ScrapedData.objects.create(
             url=url,
             file_type=file_type,
-            content=scraped_content,
-            binary_content=binary_content,
-            title=title
+            content=scraped_content if scraped_content else None,  # Store text content if available
+            binary_content=binary_content if binary_content else None,  # Store binary content if available
+            title = title
         )
 
+        # return Response({'success': f'Successfully saved data from {url} to the database.'}, status=status.HTTP_200_OK)
+    
+        # Fetch the latest scraped data after saving
         latest_scraped_data = ScrapedData.objects.latest('created_at')
 
+        # API response after saving the data
         return Response({
             'success': f'Successfully saved data from {url} to the database.',
             'url': latest_scraped_data.url,
@@ -168,33 +116,43 @@ class UploadPDFView(APIView):
             return Response({'error': 'PDF file and output format are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            # Extract text from PDF using pdfplumber
             extracted_text = ""
             with pdfplumber.open(pdf_file) as pdf:
                 for page in pdf.pages:
                     extracted_text += page.extract_text() + "\n\n"
 
+            # Convert the extracted text to HTML or JSON
             file_type = ''
             converted_content = ''
 
             if output_format == 'html':
+                # Convert extracted text to HTML
                 converted_content = markdown.markdown(extracted_text)
                 file_type = 'html'
+
             elif output_format == 'json':
+                # Convert extracted text to JSON (as an array of lines)
                 json_content = {"content": extracted_text.strip().split('\n')}
-                converted_content = json.dumps(json_content, indent=4) # Ensure JSON is stored as a string
+                converted_content = json_content
                 file_type = 'json'
+
             elif output_format == 'text':
                 converted_content = extracted_text.strip()
                 file_type = 'text'
+
             else:
                 return Response({'error': 'Unsupported output format.'}, status=status.HTTP_400_BAD_REQUEST)
 
+            # Save the converted HTML or JSON to the database
             scraped_data = ScrapedData.objects.create(
                 file_type=file_type,
-                content=converted_content,
-                title=title
+                content=converted_content if file_type == 'html' else str(converted_content),
+                title = title
+                # pdf_file=pdf_file  
             )
 
+            # Fetch the latest scraped data after saving
             latest_scraped_data = ScrapedData.objects.latest('created_at')
 
             return Response({
@@ -205,16 +163,22 @@ class UploadPDFView(APIView):
                     'url': latest_scraped_data.url,
                     'file_type': latest_scraped_data.file_type,
                     'content': latest_scraped_data.content,
+                    # 'pdf_file_url': latest_scraped_data.pdf_file.url if latest_scraped_data.pdf_file else None  
                 }
             }, status=status.HTTP_200_OK)
+
         except Exception as e:
             return Response({'error': f'Error processing PDF: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+        
+# Template view to render the latest scraped data
 def scrape_view(request):
+    # Fetch the most recent scraped data
     try:
-        latest_scraped_data = ScrapedData.objects.latest('created_at')
+        latest_scraped_data = ScrapedData.objects.latest('created_at')  # Get the latest entry
     except ScrapedData.DoesNotExist:
-        latest_scraped_data = None
+        latest_scraped_data = None  # Handle case if no data exists
+
+    # Pass the latest data to the template
     return render(request, 'scrape.html', {'latest_scraped_data': latest_scraped_data})
 
 class SaveManualTextView(APIView):
@@ -224,12 +188,14 @@ class SaveManualTextView(APIView):
         if not text:
             return Response({'error': 'Please provide text.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        ScrapedData.objects.create(
+        # Save the manually entered text to the database
+        scraped_data = ScrapedData.objects.create(
             file_type='text',
             content=text,
             title=title
         )
 
+        # Fetch the latest scraped data after saving
         latest_scraped_data = ScrapedData.objects.latest('created_at')
 
         return Response({
