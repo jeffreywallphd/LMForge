@@ -39,3 +39,4 @@
 6. Whenever you want to start the applicatoin again, start your Python virtual environment and run the Python command below.
 - .\venv\Scripts\activate
 - python manage.py runserver 
+
