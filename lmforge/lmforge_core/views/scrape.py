@@ -13,6 +13,7 @@ import markdown
 from transformers import pipeline
 # Make sure to import urlparse
 from urllib.parse import urlparse
+import time # I've added this import for rate-limiting
 
 from django.conf import settings
 from django.conf.urls.static import static
@@ -38,7 +39,7 @@ class ScrapeDataView(APIView):
 
             try:
                 # Reddit's API requires a custom User-Agent header
-                headers = {'User-Agent': 'My-Django-Scraper-App/1.1'}
+                headers = {'User-Agent': 'My-Django-Scraper-App/1.2'}
                 response = requests.get(api_url, headers=headers)
                 response.raise_for_status()
                 data = response.json()
@@ -70,19 +71,61 @@ class ScrapeDataView(APIView):
                     
                     scraped_content = "\n".join(content_lines)
 
-                # LOGIC 2: Handle a subreddit URL (e.g., /r/Python/)
+                # LOGIC 2: Handle a subreddit URL (e.g., /r/Python/) - MODIFIED BLOCK
                 elif parsed_url.path.startswith('/r/'):
-                    file_type = 'reddit_subreddit'
+                    file_type = 'reddit_subreddit_full'
                     
                     subreddit_name = parsed_url.path.split('/')[2]
                     posts = data['data']['children']
                     
-                    content_lines = [f"Scraped Posts from r/{subreddit_name}:\n---"]
+                    content_lines = [f"Scraped Posts and Comments from r/{subreddit_name}:\n" + "="*40]
+
                     for i, post_item in enumerate(posts):
                         post_data = post_item['data']
                         post_title = post_data.get('title', 'No Title')
                         post_author = post_data.get('author', 'Unknown')
-                        content_lines.append(f"{i+1}. {post_title} (by u/{post_author})")
+                        permalink = post_data.get('permalink')
+
+                        if not permalink:
+                            continue # Skip if there's no link to the post
+
+                        content_lines.append(f"\n\n--- POST {i+1}: {post_title} (by u/{post_author}) ---\n")
+
+                        # Construct the full URL for the individual post's JSON data
+                        post_api_url = f"https://www.reddit.com{permalink.rstrip('/')}.json"
+                        
+                        try:
+                            # Make a new, secondary request for each individual post
+                            post_response = requests.get(post_api_url, headers=headers)
+                            post_response.raise_for_status()
+                            post_and_comment_data = post_response.json()
+
+                            # Extract the post's own text content
+                            post_content_data = post_and_comment_data[0]['data']['children'][0]['data']
+                            post_text = post_content_data.get('selftext', '')
+                            if post_text:
+                                content_lines.append(f"--- POST CONTENT ---\n{post_text}\n")
+
+                            # Extract the comments for the post
+                            content_lines.append("--- COMMENTS ---")
+                            comments_data = post_and_comment_data[1]['data']['children']
+                            if not comments_data:
+                                content_lines.append("No comments found for this post.")
+                            else:
+                                for comment in comments_data:
+                                    # Check for valid comment data to avoid errors on deleted comments
+                                    if 'data' in comment and 'body' in comment['data']:
+                                        comment_author = comment['data'].get('author', 'Unknown')
+                                        comment_body = comment['data'].get('body', '')
+                                        content_lines.append(f"\n> u/{comment_author}:\n{comment_body}\n")
+                            
+                            # A small delay to avoid spamming the API too quickly
+                            time.sleep(0.5)
+
+                        except requests.RequestException as post_e:
+                            content_lines.append(f"\n[Could not fetch content for this post. Error: {str(post_e)}]")
+                        except (KeyError, IndexError):
+                            content_lines.append("\n[Could not parse content for this post.]")
                     
                     scraped_content = "\n".join(content_lines)
 
