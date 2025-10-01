@@ -11,7 +11,7 @@ attrs==24.2.0
 backoff==2.2.1
 beautifulsoup4==4.12.3
 bert-score==0.3.13
-bitsandbytes==0.47.0
+bitsandbytes
 branca==0.8.0
 bs4==0.0.2
 certifi==2024.8.30
@@ -63,7 +63,6 @@ matplotlib==3.9.4
 mpmath==1.3.0
 multidict==6.1.0
 multiprocess==0.70.16
-mysqlclient==2.2.6
 networkx==3.2.1
 nltk==3.9.1
 numpy==2.0.2
@@ -104,7 +103,7 @@ rouge_score==0.1.2
 rpds-py==0.21.0
 safetensors==0.4.5
 scikit-learn==1.6.0
-scipy==1.13.1
+scipy
 sentence-transformers==4.0.2
 sentencepiece==0.2.0
 sentry-sdk==2.19.0
@@ -120,9 +119,9 @@ tiktoken==0.8.0
 tokenizers==0.20.3
 toml==0.10.2
 tomli==2.2.1
-torch==2.6.0+cu124
-torchaudio==2.6.0+cu124
-torchvision==0.21.0+cu124
+torch
+torchaudio
+torchvision
 tqdm==4.67.0
 transformers==4.46.3
 typing-inspection==0.4.0

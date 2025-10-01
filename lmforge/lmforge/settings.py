@@ -135,19 +135,18 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-
-
 # Database
+
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 DB_NAME = config('DATABASE_NAME', default='')
 DB_USER = config('DATABASE_USER', default='')
 DB_PASSWORD = config('DATABASE_PASSWORD', default='')
-DB_HOST = config('DATABASE_HOST', default='')
-DB_PORT = config('DATABASE_PORT', default='3306')
+DB_HOST = config('DATABASE_HOST', default='db')
+DB_PORT = config('DATABASE_PORT', default='5432')  # Postgres default
 
 def _looks_placeholder(v: str) -> bool:
     v = (v or '').strip().lower()
-    return v in {'', 'password', 'changeme', 'your_db', 'your_user', 'localhost'}
+    return v in {'', 'password', 'changeme', 'your_db', 'your_user'}
 
 # Only allow fallback in dev
 RUNNING_DEV_SERVER = 'runserver' in sys.argv
@@ -161,16 +160,22 @@ MISSING_OR_PLACEHOLDER = (
 USE_SQLITE_FALLBACK = DEBUG and (RUNNING_DEV_SERVER or 'migrate' in sys.argv) and MISSING_OR_PLACEHOLDER
 
 if USE_SQLITE_FALLBACK:
-    print("Update your .env to connect to MySQL.")
-    DATABASES = {}
+    print("Update your .env to connect to PostgreSQL. Using SQLite fallback for dev.")
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR + '/db.sqlite3',
+        },
+    }
 else:
     DATABASES = {
         'default': {
-            'ENGINE': 'django.db.backends.mysql',
+            'ENGINE': 'django.db.backends.postgresql',
             'NAME': DB_NAME,
             'USER': DB_USER,
             'PASSWORD': DB_PASSWORD,
-            'HOST': DB_HOST,
-            'PORT': DB_PORT,
-        }
+            'HOST': DB_HOST or 'localhost',
+            'PORT': DB_PORT or '5432',
+        },
     }
+
