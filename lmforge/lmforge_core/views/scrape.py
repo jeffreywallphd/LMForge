@@ -13,7 +13,7 @@ import markdown
 from transformers import pipeline
 # Make sure to import urlparse
 from urllib.parse import urlparse
-import time # I've added this import for rate-limiting
+import time
 
 from django.conf import settings
 from django.conf.urls.static import static
@@ -22,6 +22,8 @@ class ScrapeDataView(APIView):
     def get(self, request):
         url = request.GET.get('url')
         title = request.GET.get('title')
+        # --- MODIFICATION 1: Get the new source_type parameter ---
+        source_type = request.GET.get('source_type') # e.g., 'reddit' or 'generic'
 
         if not url:
             return Response({'error': 'Please provide a URL.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -31,9 +33,10 @@ class ScrapeDataView(APIView):
         binary_content = None
         file_type = None
 
-        # --- START: Reddit API Integration ---
-        parsed_url = urlparse(url)
-        if 'reddit.com' in parsed_url.netloc:
+        # --- MODIFICATION 2: Main logic now checks for the source_type ---
+        if source_type == 'reddit':
+            # --- START: Reddit API Integration ---
+            parsed_url = urlparse(url)
             # Convert the regular Reddit URL to its JSON API equivalent
             api_url = url.rstrip('/') + ".json"
 
@@ -48,7 +51,6 @@ class ScrapeDataView(APIView):
                 if '/comments/' in parsed_url.path:
                     file_type = 'reddit_post'
                     
-                    # The response is a list containing post data and then comment data
                     post_data = data[0]['data']['children'][0]['data']
                     post_title = post_data.get('title', 'No Title')
                     post_author = post_data.get('author', 'Unknown Author')
@@ -71,7 +73,7 @@ class ScrapeDataView(APIView):
                     
                     scraped_content = "\n".join(content_lines)
 
-                # LOGIC 2: Handle a subreddit URL (e.g., /r/Python/) - MODIFIED BLOCK
+                # LOGIC 2: Handle a subreddit URL (e.g., /r/Python/)
                 elif parsed_url.path.startswith('/r/'):
                     file_type = 'reddit_subreddit_full'
                     
@@ -87,39 +89,32 @@ class ScrapeDataView(APIView):
                         permalink = post_data.get('permalink')
 
                         if not permalink:
-                            continue # Skip if there's no link to the post
+                            continue
 
                         content_lines.append(f"\n\n--- POST {i+1}: {post_title} (by u/{post_author}) ---\n")
-
-                        # Construct the full URL for the individual post's JSON data
                         post_api_url = f"https://www.reddit.com{permalink.rstrip('/')}.json"
                         
                         try:
-                            # Make a new, secondary request for each individual post
                             post_response = requests.get(post_api_url, headers=headers)
                             post_response.raise_for_status()
                             post_and_comment_data = post_response.json()
 
-                            # Extract the post's own text content
                             post_content_data = post_and_comment_data[0]['data']['children'][0]['data']
                             post_text = post_content_data.get('selftext', '')
                             if post_text:
                                 content_lines.append(f"--- POST CONTENT ---\n{post_text}\n")
 
-                            # Extract the comments for the post
                             content_lines.append("--- COMMENTS ---")
                             comments_data = post_and_comment_data[1]['data']['children']
                             if not comments_data:
                                 content_lines.append("No comments found for this post.")
                             else:
                                 for comment in comments_data:
-                                    # Check for valid comment data to avoid errors on deleted comments
                                     if 'data' in comment and 'body' in comment['data']:
                                         comment_author = comment['data'].get('author', 'Unknown')
                                         comment_body = comment['data'].get('body', '')
                                         content_lines.append(f"\n> u/{comment_author}:\n{comment_body}\n")
                             
-                            # A small delay to avoid spamming the API too quickly
                             time.sleep(0.5)
 
                         except requests.RequestException as post_e:
@@ -132,18 +127,17 @@ class ScrapeDataView(APIView):
                 # LOGIC 3: Invalid Reddit URL
                 else:
                     return Response({
-                        'error': 'This appears to be a Reddit URL, but not a valid post or subreddit page. Please provide a URL for a specific post or a subreddit (e.g., https://www.reddit.com/r/python/).'
+                        'error': 'This appears to be a Reddit URL, but not a valid post or subreddit page.'
                     }, status=status.HTTP_400_BAD_REQUEST)
 
             except requests.RequestException as e:
                 return Response({'error': f'Failed to retrieve data from Reddit API. Error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
             except (KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
-                 return Response({'error': f'Failed to parse Reddit API response. Ensure the URL is a valid, public post or subreddit. Error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        # --- END: Reddit API Integration ---
+                 return Response({'error': f'Failed to parse Reddit API response. Ensure the URL is valid. Error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # --- END: Reddit API Integration ---
 
         else:
-            # Original code for handling all other non-Reddit URLs
+            # --- This is the original code for handling all other non-Reddit URLs ---
             try:
                 response = requests.get(url)
                 response.raise_for_status()
