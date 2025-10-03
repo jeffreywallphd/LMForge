@@ -2,7 +2,7 @@ version: '3.9'
 
 services:
   db:
-    image: postgres:15
+    image: pgvector/pgvector:pg18-trixie
     container_name: postgres_docker
     environment:
       POSTGRES_USER: postgres
@@ -16,7 +16,15 @@ services:
   web:
     build: .
     container_name: django_app
-    command: gunicorn lmforge.wsgi:application --bind 0.0.0.0:8000
+    command: >
+      sh -c "
+        echo 'Waiting for DB to be ready...';
+        until pg_isready -h db -U postgres; do sleep 1; done;
+        echo 'Creating pgvector extension...';
+        PGPASSWORD=postgres psql -h db -U postgres -d lmf -c 'CREATE EXTENSION IF NOT EXISTS vector;';
+        echo 'Starting Django...';
+        gunicorn lmforge.wsgi:application --bind 0.0.0.0:8000
+      "
     volumes:
       - .:/app
     ports:
