@@ -95,6 +95,7 @@ class ScrapeDataView(APIView):
                         post_api_url = f"https://www.reddit.com{permalink.rstrip('/')}.json"
                         
                         try:
+                            print(post_api_url)
                             post_response = requests.get(post_api_url, headers=headers)
                             post_response.raise_for_status()
                             post_and_comment_data = post_response.json()
