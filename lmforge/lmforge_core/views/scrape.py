@@ -1,4 +1,4 @@
-from rest_framework.views import APIView
+from django.views import View
 from rest_framework.response import Response
 from rest_framework import status
 import requests
@@ -18,39 +18,70 @@ import time
 from django.conf import settings
 from django.conf.urls.static import static
 
-class ScrapeDataView(APIView):
-    def get(self, request):
+from django.http import StreamingHttpResponse
+
+import re
+
+def remove_emojis(text):
+    """
+    Removes emojis and other 4-byte characters from a string.
+    """
+    if not text:
+        return ""
+    # Regex to match most common emojis, symbols, and pictographs
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+        "\u2600-\u26FF"          # miscellaneous symbols
+        "\u2700-\u27BF"          # dingbats
+        "]+",
+        flags=re.UNICODE,
+    )
+    return emoji_pattern.sub(r"", text)
+
+class ScrapeDataView(View):
+    def stream_scrape_events(self, request):
+        """
+        A generator function that performs scraping and yields Server-Sent Events.
+        """
         url = request.GET.get('url')
         title = request.GET.get('title')
-        # --- MODIFICATION 1: Get the new source_type parameter ---
-        source_type = request.GET.get('source_type') # e.g., 'reddit' or 'generic'
+        source_type = request.GET.get('source_type')
+
+        def send_event(event_type, data):
+            """Helper to format data as a Server-Sent Event."""
+            json_data = json.dumps({"type": event_type, "data": data})
+            return f"data: {json_data}\n\n"
 
         if not url:
-            return Response({'error': 'Please provide a URL.'}, status=status.HTTP_400_BAD_REQUEST)
+            yield send_event('error', {'message': 'Please provide a URL.'})
+            return
 
-        # Initialize variables for content storage
-        scraped_content = None
-        binary_content = None
-        file_type = None
+        try:
+            # --- Initial Progress Update ---
+            yield send_event('progress', {'message': f"Connecting to {url}..."})
 
-        # --- MODIFICATION 2: Main logic now checks for the source_type ---
-        if source_type == 'reddit':
-            # --- START: Reddit API Integration ---
-            parsed_url = urlparse(url)
-            # Convert the regular Reddit URL to its JSON API equivalent
-            api_url = url.rstrip('/') + ".json"
+            scraped_content = None
+            binary_content = None
+            file_type = None
 
-            try:
-                # Reddit's API requires a custom User-Agent header
+            if source_type == 'reddit':
+                parsed_url = urlparse(url)
+                api_url = url.rstrip('/') + ".json"
                 headers = {'User-Agent': 'My-Django-Scraper-App/1.2'}
+                
+                yield send_event('progress', {'message': f"Requesting data from Reddit API: {api_url}"})
                 response = requests.get(api_url, headers=headers)
                 response.raise_for_status()
                 data = response.json()
 
-                # LOGIC 1: Handle a specific post URL (contains /comments/)
-                if '/comments/' in parsed_url.path:
+                if '/comments/' in parsed_url.path: # Handle specific post
                     file_type = 'reddit_post'
-                    
+                    yield send_event('progress', {'message': 'Parsing Reddit post and comments...'})
+                    # ... [Your existing logic for parsing a single post]
                     post_data = data[0]['data']['children'][0]['data']
                     post_title = post_data.get('title', 'No Title')
                     post_author = post_data.get('author', 'Unknown Author')
@@ -73,37 +104,35 @@ class ScrapeDataView(APIView):
                     
                     scraped_content = "\n".join(content_lines)
 
-                # LOGIC 2: Handle a subreddit URL (e.g., /r/Python/)
-                elif parsed_url.path.startswith('/r/'):
+
+                elif parsed_url.path.startswith('/r/'): # Handle subreddit
                     file_type = 'reddit_subreddit_full'
-                    
                     subreddit_name = parsed_url.path.split('/')[2]
                     posts = data['data']['children']
+                    yield send_event('progress', {'message': f'Found {len(posts)} posts in r/{subreddit_name}. Scraping each...'})
                     
                     content_lines = [f"Scraped Posts and Comments from r/{subreddit_name}:\n" + "="*40]
-
                     for i, post_item in enumerate(posts):
                         post_data = post_item['data']
                         post_title = post_data.get('title', 'No Title')
-                        post_author = post_data.get('author', 'Unknown')
                         permalink = post_data.get('permalink')
 
-                        if not permalink:
-                            continue
-
-                        content_lines.append(f"\n\n--- POST {i+1}: {post_title} (by u/{post_author}) ---\n")
+                        if not permalink: continue
+                        
+                        yield send_event('progress', {'message': f'({i+1}/{len(posts)}) Scraping post: "{post_title}"'})
+                        
                         post_api_url = f"https://www.reddit.com{permalink.rstrip('/')}.json"
                         
                         try:
-                            print(post_api_url)
+                            time.sleep(0.5) # Respect Reddit's rate limits
                             post_response = requests.get(post_api_url, headers=headers)
                             post_response.raise_for_status()
                             post_and_comment_data = post_response.json()
-
+                            
                             post_content_data = post_and_comment_data[0]['data']['children'][0]['data']
                             post_text = post_content_data.get('selftext', '')
                             if post_text:
-                                content_lines.append(f"--- POST CONTENT ---\n{post_text}\n")
+                                content_lines.append(f"\n--- POST CONTENT ---\n{post_text}\n")
 
                             content_lines.append("--- COMMENTS ---")
                             comments_data = post_and_comment_data[1]['data']['children']
@@ -115,88 +144,89 @@ class ScrapeDataView(APIView):
                                         comment_author = comment['data'].get('author', 'Unknown')
                                         comment_body = comment['data'].get('body', '')
                                         content_lines.append(f"\n> u/{comment_author}:\n{comment_body}\n")
-                            
-                            time.sleep(0.5)
-
-                        except requests.RequestException as post_e:
-                            content_lines.append(f"\n[Could not fetch content for this post. Error: {str(post_e)}]")
-                        except (KeyError, IndexError):
-                            content_lines.append("\n[Could not parse content for this post.]")
+                        except Exception as post_e:
+                            content_lines.append(f"\n[Could not fetch content for post. Error: {str(post_e)}]")
                     
                     scraped_content = "\n".join(content_lines)
 
-                # LOGIC 3: Invalid Reddit URL
                 else:
-                    return Response({
-                        'error': 'This appears to be a Reddit URL, but not a valid post or subreddit page.'
-                    }, status=status.HTTP_400_BAD_REQUEST)
-
-            except requests.RequestException as e:
-                return Response({'error': f'Failed to retrieve data from Reddit API. Error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
-            except (KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
-                 return Response({'error': f'Failed to parse Reddit API response. Ensure the URL is valid. Error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            # --- END: Reddit API Integration ---
-
-        else:
-            # --- This is the original code for handling all other non-Reddit URLs ---
-            try:
+                    yield send_event('error', {'message': 'Invalid Reddit URL.'})
+                    return
+            else:
+                # --- This block handles generic (non-Reddit) URLs ---
+                yield send_event('progress', {'message': 'Scraping generic URL...'})
+                # ... [Your existing logic for handling generic URLs]
                 response = requests.get(url)
                 response.raise_for_status()
-            except requests.RequestException as e:
-                return Response({'error': f'Failed to retrieve data from the URL. Error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+                content_type = response.headers.get('Content-Type', '').lower()
 
-            content_type = response.headers.get('Content-Type', '').lower()
-
-            if 'application/json' in content_type:
-                file_type = 'json'
-                scraped_content = json.dumps(response.json(), indent=4)
-            elif 'application/xml' in content_type or 'text/xml' in content_type:
-                file_type = 'xml'
-                scraped_content = response.content.decode('utf-8')
-            elif 'text/plain' in content_type:
-                file_type = 'text'
-                scraped_content = response.content.decode('utf-8')
-            elif 'text/html' in content_type:
-                file_type = 'html'
-                soup = BeautifulSoup(response.content, 'html.parser')
-                for script in soup(["script", "style", "meta", "noscript"]):
-                    script.extract()
-                main_content = soup.find("article")
-                if not main_content:
-                    main_content = soup.find("div", {"class": "content"})
-                if main_content:
-                    scraped_content = main_content.get_text(separator="\n", strip=True)
+                if 'application/json' in content_type:
+                    file_type = 'json'
+                    scraped_content = json.dumps(response.json(), indent=4)
+                elif 'application/xml' in content_type or 'text/xml' in content_type:
+                    file_type = 'xml'
+                    scraped_content = response.content.decode('utf-8')
+                elif 'text/plain' in content_type:
+                    file_type = 'text'
+                    scraped_content = response.content.decode('utf-8')
+                elif 'text/html' in content_type:
+                    file_type = 'html'
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    for script in soup(["script", "style", "meta", "noscript"]):
+                        script.extract()
+                    main_content = soup.find("article")
+                    if not main_content:
+                        main_content = soup.find("div", {"class": "content"})
+                    if main_content:
+                        scraped_content = main_content.get_text(separator="\n", strip=True)
+                    else:
+                        scraped_content = soup.get_text(separator="\n", strip=True)
+                    scraped_content = "\n".join([line.strip() for line in scraped_content.split("\n") if line.strip()])
+                elif 'text/csv' in content_type or 'application/csv' in content_type:
+                    file_type = 'csv'
+                    scraped_content = response.content.decode('utf-8')
+                elif 'application/vnd.ms-excel' in content_type or 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' in content_type:
+                    file_type = 'xlsx'
+                    binary_content = response.content
                 else:
-                    scraped_content = soup.get_text(separator="\n", strip=True)
-                scraped_content = "\n".join([line.strip() for line in scraped_content.split("\n") if line.strip()])
-            elif 'text/csv' in content_type or 'application/csv' in content_type:
-                file_type = 'csv'
-                scraped_content = response.content.decode('utf-8')
-            elif 'application/vnd.ms-excel' in content_type or 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' in content_type:
-                file_type = 'xlsx'
-                binary_content = response.content
-            else:
-                return Response({'error': f'Unsupported content type: {content_type}'}, status=status.HTTP_400_BAD_REQUEST)
+                    yield send_event('error', {'message': f'Unsupported content type: {content_type}'})
+                    return
 
-        # Save the scraped data to the database
-        ScrapedData.objects.create(
-            url=url,
-            file_type=file_type,
-            content=scraped_content,
-            binary_content=binary_content,
-            title=title
-        )
+            # --- Save to DB and send final result ---
+            yield send_event('progress', {'message': 'Scraping complete. Saving to database...'})
+            
+            # Remove emojis before saving
+            cleaned_scraped_content = remove_emojis(scraped_content)
 
-        latest_scraped_data = ScrapedData.objects.latest('created_at')
+            ScrapedData.objects.create(
+                url=url,
+                file_type=file_type,
+                content=cleaned_scraped_content,
+                binary_content=binary_content,
+                title=title
+            )
 
-        return Response({
-            'success': f'Successfully saved data from {url} to the database.',
-            'url': latest_scraped_data.url,
-            'file_type': latest_scraped_data.file_type,
-            'content': latest_scraped_data.content
-        }, status=status.HTTP_200_OK)
+            final_data = {
+                'success': f'Successfully saved data from {url} to the database.',
+                'url': url,
+                'file_type': file_type,
+                'content': cleaned_scraped_content
+            }
+            yield send_event('complete', final_data)
+        
+        except Exception as e:
+            yield send_event('error', {'message': f'An unexpected error occurred: {str(e)}'})
+            return
 
-class UploadPDFView(APIView):
+    def get(self, request):
+        """
+        Returns a streaming response to send live scraping updates.
+        """
+        response = StreamingHttpResponse(self.stream_scrape_events(request), content_type='text/event-stream')
+        response['Cache-Control'] = 'no-cache'
+        return response
+
+class UploadPDFView(View):
     def post(self, request):
         pdf_file = request.FILES.get('pdf_file')
         output_format = request.POST.get('output_format')
@@ -255,7 +285,7 @@ def scrape_view(request):
         latest_scraped_data = None
     return render(request, 'scrape.html', {'latest_scraped_data': latest_scraped_data})
 
-class SaveManualTextView(APIView):
+class SaveManualTextView(View):
     def post(self, request):
         text = request.data.get('text')
         title = request.data.get('title')

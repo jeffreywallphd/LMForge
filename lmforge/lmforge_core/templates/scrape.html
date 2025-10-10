@@ -5,6 +5,17 @@
 
 {% block content %}
 
+{% if messages %}
+<div class="alert alert-info">
+    <ul class="mb-0">
+        {% for message in messages %}
+        <li>{{ message }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+
 
 
 <div class="container mt-5">
@@ -38,13 +49,6 @@
         <div id="result" class="mb-4"></div>
     </div>
 
-    <!-- Reddit URL Input Section -->
-    <div id="redditSection" class="input-section" style="display: none;">
-        {% include "processor_url.html" %}
-
-        <div id="result" class="mb-4"></div>
-    </div>
-
     <!-- PDF Upload Section -->
     <div id="pdfSection" class="input-section" style="display: none;">
         {% include "processor_pdf.html" %}
@@ -70,22 +74,20 @@
     document.getElementById('inputMethod').addEventListener('change', function () {
         const selectedOption = this.value;
 
+        // Hide all sections first
         document.getElementById('urlSection').style.display = 'none';
         document.getElementById('pdfSection').style.display = 'none';
         document.getElementById('textSection').style.display = 'none';
-        document.getElementById('redditSection').style.display = 'none';
         
-
-        if (selectedOption === 'url') {
+        // --- MODIFICATION ---
+        // Show the URL section if the user selects either 'url' OR 'reddit'
+        if (selectedOption === 'url' || selectedOption === 'reddit') {
             document.getElementById('urlSection').style.display = 'block';
         } else if (selectedOption === 'pdf') {
             document.getElementById('pdfSection').style.display = 'block';
         } else if (selectedOption === 'text') {
             document.getElementById('textSection').style.display = 'block';
-        } else if (selectedOption === 'reddit') {
-            document.getElementById('redditSection').style.display = 'block';
         }
-        
     });
 </script>
 
