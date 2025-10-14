@@ -1,7 +1,6 @@
 from django.shortcuts import render, redirect
 from ..forms.forms import DocumentForm, DocumentProcessingForm
 from ..models.scraped_data import ScrapedData, ScrapedDataMeta
-from ..utils.qdrant_utils import upsert_qa_items, search_similar
 from PyPDF2 import PdfReader
 from django.shortcuts import get_object_or_404
 from django.contrib import messages
@@ -239,22 +238,7 @@ def document_detail(request):
     text_chunks = split_text(combined_text, max_tokens=1000)  # Adjust chunk size
     total_chunks = len(text_chunks)
 
-    # after generated_json_text = extract_qa(...)
-    generated_json_data = json.loads(generated_json_text)
-
-    # optional: enrich each QA item with source metadata
-    for idx, item in enumerate(generated_json_data):
-        # add any metadata you want searchable later
-        item.setdefault('chunk_index', idx)
-        item.setdefault('source_documents', selected_document_ids)
-        item.setdefault('created_at', datetime.utcnow().isoformat())
-
-    # Upsert into Qdrant (collection name can be customized)
-    try:
-        upsert_result = upsert_qa_items(generated_json_data, collection_name="qa_chunks")
-        logging.info(f"Upsert result: {upsert_result}")
-    except Exception as e:
-        logging.error(f"Failed to upsert to Qdrant: {e}")
+    generated_json_data = None
 
     if request.method == "POST":
         if selected_document_ids:
@@ -404,25 +388,4 @@ def get_huggingface_datasets(request):
         return JsonResponse({"datasets": dataset_list})
 
     except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
-
-def search_qa(request):
-    if request.method not in ["GET", "POST"]:
-        return JsonResponse({"error": "Invalid request method."}, status=405)
-
-    # Extract query string (from GET or POST)
-    q = request.GET.get("q") if request.method == "GET" else request.POST.get("q")
-    q = (q or "").strip()
-    if not q:
-        return JsonResponse({"error": "Missing query parameter 'q'."}, status=400)
-
-    # Extract optional top_k value
-    top_k = request.GET.get("k") if request.method == "GET" else request.POST.get("k")
-    top_k = int(top_k) if top_k and top_k.isdigit() else 5
-
-    try:
-        results = search_similar(q, top_k=top_k, collection_name="qa_chunks")
-        return JsonResponse({"results": results})
-    except Exception as e:
-        logging.error(f"Search error: {e}")
         return JsonResponse({"error": str(e)}, status=500)
