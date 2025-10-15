@@ -2,14 +2,14 @@ version: '3.9'
 
 services:
   db:
-    image: pgvector/pgvector:pg18-trixie
-    container_name: postgres_docker
+    image: pgvector/pgvector:0.8.1-pg18-trixie
+    container_name: pgvector_docker
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: lmf
+      POSTGRES_DB: lmforge
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -21,9 +21,11 @@ services:
         echo 'Waiting for DB to be ready...';
         until pg_isready -h db -U postgres; do sleep 1; done;
         echo 'Creating pgvector extension...';
-        PGPASSWORD=postgres psql -h db -U postgres -d lmf -c 'CREATE EXTENSION IF NOT EXISTS vector;';
+        PGPASSWORD=postgres psql -h db -U postgres -d lmforge -c 'CREATE EXTENSION IF NOT EXISTS vector;';
+        echo 'Running migrations...';
+        python manage.py migrate;
         echo 'Starting Django...';
-        gunicorn lmforge.wsgi:application --bind 0.0.0.0:8000
+        python manage.py runserver 0.0.0.0:8000
       "
     volumes:
       - .:/app
@@ -32,7 +34,7 @@ services:
     depends_on:
       - db
     environment:
-      - DATABASE_NAME=lmf
+      - DATABASE_NAME=lmforge
       - DATABASE_USER=postgres
       - DATABASE_PASSWORD=postgres
       - DATABASE_HOST=db
