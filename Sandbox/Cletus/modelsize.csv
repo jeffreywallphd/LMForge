@@ -1,0 +1,6 @@
+Model Size,Avg Accuracy,Avg F1,Avg Precision,Avg Recall,Avg Training Time (sec),Avg Prediction Time (sec),Avg Parameters (millions)
+Extra Small,0.9711,0.9701,0.9708,0.9711,103.6,4.2,12.3
+Small,0.9375,0.9169,0.8996,0.9375,943.1,67.2,21.5
+Medium,0.9617,0.9538,0.9473,0.9617,508.8,46.9,60.4
+Large,0.9779,0.9775,0.9776,0.9779,165,5.9,115
+Extra Large,0.9669,0.966,0.9661,0.9669,562.7,21,287.5
