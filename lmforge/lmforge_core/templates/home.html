@@ -14,6 +14,33 @@
     </div>
 {% endif %}
 
+<h2>Database chunks</h2>
+<div>
+    <a href="{% url 'database-workflow' %}" class="button success">+ New Dataset</a>
+    <div class="table-responsive workflow-table">
+        <table class="table table-striped table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th>Database chunks</th>
+                    <th>Created</th>
+                    <th>Downloads</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for dataset in datasets %}
+                <tr>
+                    <td>{{ dataset.id }}</td>
+                    <td>{{ dataset.created_at }}</td>
+                    <td>{{ dataset.downloads }}</td>
+                    <td><a href="" class="button">Edit</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <h2>Datasets</h2>
 <div>
     <a href="{% url 'dataset-workflow' %}" class="button success">+ New Dataset</a>

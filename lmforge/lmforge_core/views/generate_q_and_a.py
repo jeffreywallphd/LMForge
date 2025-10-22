@@ -46,7 +46,7 @@ logging.basicConfig(
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-DEFAULT_HF_API_KEY = config("HUGGINGFACE_TOKEN", default="")
+DEFAULT_HF_API_KEY = config("HF_API_KEY", default="")
 # setting huggingface token
 
 def get_model_and_tokenizer():
