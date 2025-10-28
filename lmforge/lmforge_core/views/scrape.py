@@ -1,205 +1,164 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from django.shortcuts import render
+
 import requests
 import json
 from bs4 import BeautifulSoup
-from django.shortcuts import render
 from openpyxl import load_workbook
 from io import BytesIO
-from ..models.scraped_data import ScrapedData  # Import the model to save data
 import pdfplumber
 import markdown
-from transformers import pipeline
+import logging
 
-from django.conf import settings
-from django.conf.urls.static import static
+from ..models.scraped_data import ScrapedData
+
+logger = logging.getLogger(__name__)
+
 
 class ScrapeDataView(APIView):
+    """Scrape data from a URL and save to ScrapedData."""
+
     def get(self, request):
-        url = request.GET.get('url')
-        title = request.GET.get('title')
-        print(title)
+        url = request.GET.get("url")
+        title = request.GET.get("title", "")
         if not url:
-            return Response({'error': 'Please provide a URL.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Missing 'url' parameter"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Fetch the data from the URL
-            response = requests.get(url)
-            response.raise_for_status()  # Raise an error for bad status codes
-        except requests.RequestException as e:
-            return Response({'error': f'Failed to retrieve data from the URL. Error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+            r = requests.get(url, timeout=15)
+            r.raise_for_status()
+        except Exception as e:
+            logger.exception("Failed to fetch url %s", url)
+            return Response({"error": f"Failed to fetch URL: {e}"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Detect the content type
-        content_type = response.headers.get('Content-Type', '').lower()
+        ctype = r.headers.get("content-type", "").lower()
 
-        # Initialize variables for content storage
-        scraped_content = None
-        binary_content = None
-        file_type = None
+        # JSON
+        if "application/json" in ctype or (r.text and r.text.strip().startswith("{")):
+            content = json.dumps(r.json(), indent=2)
+            file_type = "json"
 
-        if 'application/json' in content_type:
-            file_type = 'json'
-            scraped_content = json.dumps(response.json(), indent=4)  # Convert JSON to string
+        # XML-ish
+        elif any(x in ctype for x in ("application/xml", "text/xml", "application/rss+xml")):
+            content = r.text
+            file_type = "xml"
 
-        elif 'application/xml' in content_type or 'text/xml' in content_type:
-            file_type = 'xml'
-            scraped_content = response.content.decode('utf-8')  # Decode XML content
+        # Plain text
+        elif "text/plain" in ctype:
+            content = r.text
+            file_type = "text"
 
-        elif 'text/plain' in content_type:
-            file_type = 'text'
-            scraped_content = response.content.decode('utf-8')  # Decode plain text content
+        # CSV
+        elif "text/csv" in ctype or url.lower().endswith(".csv"):
+            content = r.text
+            file_type = "csv"
 
-        elif 'text/html' in content_type:
-            file_type = 'html'
-            soup = BeautifulSoup(response.content, 'html.parser')
-
-            for script in soup(["script", "style", "meta", "noscript"]):
-                script.extract()
-
-            main_content = soup.find("article")  
-            if not main_content:
-                main_content = soup.find("div", {"class": "content"}) 
-            
-            if main_content:
-                scraped_content = main_content.get_text(separator="\n", strip=True)  
-            else:
-                scraped_content = soup.get_text(separator="\n", strip=True) 
-
-            scraped_content = "\n".join([line.strip() for line in scraped_content.split("\n") if line.strip()])
-
-        elif 'text/csv' in content_type or 'application/csv' in content_type:
-            file_type = 'csv'
-            scraped_content = response.content.decode('utf-8')  # Decode CSV content
-
-        elif 'application/vnd.ms-excel' in content_type or 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' in content_type:
-            file_type = 'xlsx'
-
-            # For xlsx, we store the binary content
+        # XLSX / Excel
+        elif any(x in ctype for x in ("excel", "spreadsheetml", "vnd.openxmlformats")) or url.lower().endswith(".xlsx"):
             try:
-                binary_content = response.content  # Store the binary content as is
+                bio = BytesIO(r.content)
+                wb = load_workbook(filename=bio, read_only=True)
+                ws = wb[wb.sheetnames[0]]
+                rows = []
+                for row in ws.iter_rows(values_only=True):
+                    rows.append(",".join([str(c) if c is not None else "" for c in row]))
+                content = "\n".join(rows)
+                file_type = "xlsx"
             except Exception as e:
-                return Response({'error': f'Error processing xlsx file: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                logger.exception("Failed to parse xlsx: %s", e)
+                return Response({"error": "Failed to parse xlsx file"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+        # HTML
         else:
-            return Response({'error': f'Unsupported content type: {content_type}'}, status=status.HTTP_400_BAD_REQUEST)
+            # Basic HTML extraction (kept intentionally simple here; a dedicated extractor will be used later)
+            soup = BeautifulSoup(r.content, "html.parser")
+            article = soup.find("article") or soup.find(class_="content") or soup.find("main")
+            if article:
+                text = article.get_text("\n\n", strip=True)
+            else:
+                body = soup.body
+                text = body.get_text("\n\n", strip=True) if body else soup.get_text("\n\n", strip=True)
+            content = text
+            file_type = "html"
 
-        # Save the scraped data to the database
-        scraped_data = ScrapedData.objects.create(
-            url=url,
-            file_type=file_type,
-            content=scraped_content if scraped_content else None,  # Store text content if available
-            binary_content=binary_content if binary_content else None,  # Store binary content if available
-            title = title
-        )
+        # Save
+        try:
+            sd = ScrapedData.objects.create(
+                url=url,
+                file_type=file_type,
+                content=content,
+                title=title or (url[:95] if url else "scraped")
+            )
+        except Exception as e:
+            logger.exception("Failed to save ScrapedData: %s", e)
+            return Response({"error": "Failed to save scraped data"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        # return Response({'success': f'Successfully saved data from {url} to the database.'}, status=status.HTTP_200_OK)
-    
-        # Fetch the latest scraped data after saving
-        latest_scraped_data = ScrapedData.objects.latest('created_at')
+        return Response({"success": "Scraped and saved", "id": sd.id, "url": sd.url, "file_type": sd.file_type, "content": sd.content})
 
-        # API response after saving the data
-        return Response({
-            'success': f'Successfully saved data from {url} to the database.',
-            'url': latest_scraped_data.url,
-            'file_type': latest_scraped_data.file_type,
-            'content': latest_scraped_data.content
-        }, status=status.HTTP_200_OK)
 
 class UploadPDFView(APIView):
-    def post(self, request):
-        pdf_file = request.FILES.get('pdf_file')
-        output_format = request.POST.get('output_format')
-        title = request.POST.get('title')
+    """Upload a PDF and convert it to text/html/json as requested."""
 
-        if not pdf_file or not output_format:
-            return Response({'error': 'PDF file and output format are required.'}, status=status.HTTP_400_BAD_REQUEST)
+    def post(self, request):
+        pdf_file = request.FILES.get("pdf_file")
+        output_format = request.POST.get("output_format") or request.data.get("output_format") or "text"
+        title = request.POST.get("title") or request.data.get("title") or (getattr(pdf_file, 'name', '') if pdf_file else "uploaded_pdf")
+
+        if not pdf_file:
+            return Response({"error": "No PDF file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Extract text from PDF using pdfplumber
-            extracted_text = ""
+            text_parts = []
             with pdfplumber.open(pdf_file) as pdf:
-                for page in pdf.pages:
-                    extracted_text += page.extract_text() + "\n\n"
+                for p in pdf.pages:
+                    text_parts.append(p.extract_text() or "")
+            text = "\n\n".join([t for t in text_parts if t])
 
-            # Convert the extracted text to HTML or JSON
-            file_type = ''
-            converted_content = ''
-
-            if output_format == 'html':
-                # Convert extracted text to HTML
-                converted_content = markdown.markdown(extracted_text)
-                file_type = 'html'
-
-            elif output_format == 'json':
-                # Convert extracted text to JSON (as an array of lines)
-                json_content = {"content": extracted_text.strip().split('\n')}
-                converted_content = json_content
-                file_type = 'json'
-
-            elif output_format == 'text':
-                converted_content = extracted_text.strip()
-                file_type = 'text'
-
+            if output_format == "html":
+                content = markdown.markdown(text)
+                file_type = "html"
+            elif output_format == "json":
+                content = json.dumps({"text": text}, indent=2)
+                file_type = "json"
             else:
-                return Response({'error': 'Unsupported output format.'}, status=status.HTTP_400_BAD_REQUEST)
+                content = text
+                file_type = "text"
 
-            # Save the converted HTML or JSON to the database
-            scraped_data = ScrapedData.objects.create(
+            sd = ScrapedData.objects.create(
+                url="uploaded_pdf",
                 file_type=file_type,
-                content=converted_content if file_type == 'html' else str(converted_content),
-                title = title
-                # pdf_file=pdf_file  
+                content=content,
+                pdf_file=pdf_file,
+                title=title[:100]
             )
-
-            # Fetch the latest scraped data after saving
-            latest_scraped_data = ScrapedData.objects.latest('created_at')
-
-            return Response({
-                'success': f'PDF successfully converted to {output_format.upper()}.',
-                'file_type': file_type,
-                'content': converted_content,
-                'latest_scraped_data': {
-                    'url': latest_scraped_data.url,
-                    'file_type': latest_scraped_data.file_type,
-                    'content': latest_scraped_data.content,
-                    # 'pdf_file_url': latest_scraped_data.pdf_file.url if latest_scraped_data.pdf_file else None  
-                }
-            }, status=status.HTTP_200_OK)
-
         except Exception as e:
-            return Response({'error': f'Error processing PDF: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-# Template view to render the latest scraped data
-def scrape_view(request):
-    # Fetch the most recent scraped data
-    try:
-        latest_scraped_data = ScrapedData.objects.latest('created_at')  # Get the latest entry
-    except ScrapedData.DoesNotExist:
-        latest_scraped_data = None  # Handle case if no data exists
+            logger.exception("PDF conversion failed: %s", e)
+            return Response({"error": "Failed to convert PDF"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # Pass the latest data to the template
-    return render(request, 'scrape.html', {'latest_scraped_data': latest_scraped_data})
+        return Response({"success": "PDF converted and saved", "id": sd.id, "file_type": sd.file_type, "content": sd.content})
+
+
+def scrape_view(request):
+    latest = ScrapedData.objects.order_by("-created_at").first()
+    return render(request, "scrape.html", {"scraped": latest})
+
 
 class SaveManualTextView(APIView):
     def post(self, request):
-        text = request.data.get('text')
-        title = request.data.get('title')
+        text = request.data.get("text") or request.POST.get("text")
+        title = request.data.get("title") or request.POST.get("title") or "manual"
         if not text:
-            return Response({'error': 'Please provide text.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Save the manually entered text to the database
-        scraped_data = ScrapedData.objects.create(
-            file_type='text',
-            content=text,
-            title=title
-        )
-
-        # Fetch the latest scraped data after saving
-        latest_scraped_data = ScrapedData.objects.latest('created_at')
-
-        return Response({
-            'success': 'Successfully saved manually entered text.',
-            'file_type': latest_scraped_data.file_type,
-            'content': latest_scraped_data.content
-        }, status=status.HTTP_200_OK)
+            return Response({"error": "No text provided"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            sd = ScrapedData.objects.create(
+                url="manual",
+                file_type="text",
+                content=text,
+                title=title[:100]
+            )
+        except Exception as e:
+            logger.exception("Failed to save manual text: %s", e)
+            return Response({"error": "Failed to save text"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({"success": "Text saved", "id": sd.id, "file_type": sd.file_type})
