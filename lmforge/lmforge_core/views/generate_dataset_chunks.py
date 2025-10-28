@@ -143,7 +143,7 @@ def store_chunks_in_qdrant(chunks, collection_name):
 
 
 # ---------- MAIN VIEW ----------
-def document_detail(request):
+def database_workflow(request):
     """Extract text from selected documents, chunk, and store in user-selected Qdrant collection."""
     selected_document_ids = request.POST.getlist('selected_documents')
 
