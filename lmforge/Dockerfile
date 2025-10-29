@@ -19,8 +19,9 @@ COPY requirements.txt /app/
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# Copy project files
-COPY . /app/
+# Copy project files (as root)
+# COPY . /app
+COPY manage.py /app
 
 # Default command (overridden in docker-compose)
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
