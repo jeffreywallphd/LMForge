@@ -13,6 +13,7 @@ import markdown
 import logging
 
 from ..models.scraped_data import ScrapedData
+from ..utils.content_extractor import extract_article_content
 
 logger = logging.getLogger(__name__)
 
@@ -72,16 +73,40 @@ class ScrapeDataView(APIView):
 
         # HTML
         else:
-            # Basic HTML extraction (kept intentionally simple here; a dedicated extractor will be used later)
-            soup = BeautifulSoup(r.content, "html.parser")
-            article = soup.find("article") or soup.find(class_="content") or soup.find("main")
-            if article:
-                text = article.get_text("\n\n", strip=True)
-            else:
-                body = soup.body
-                text = body.get_text("\n\n", strip=True) if body else soup.get_text("\n\n", strip=True)
-            content = text
-            file_type = "html"
+            # Use the centralized extractor; fall back to basic BeautifulSoup parsing on error
+            try:
+                result = extract_article_content(r.content, url)
+                content = result.get("body", "") or ""
+
+                # If extractor returned an empty body, fall back to simple parsing
+                if not content.strip():
+                    logger.info("Extractor returned empty body for %s; falling back to simple HTML parsing", url)
+                    soup = BeautifulSoup(r.content, "html.parser")
+                    article = soup.find("article") or soup.find(class_="content") or soup.find("main")
+                    if article:
+                        text = article.get_text("\n\n", strip=True)
+                    else:
+                        body = soup.body
+                        text = body.get_text("\n\n", strip=True) if body else soup.get_text("\n\n", strip=True)
+                    content = text
+
+                # If user did not provide a title, prefer the extracted one
+                if not title or not title.strip():
+                    extracted_title = result.get("title") or ""
+                    if extracted_title:
+                        title = extracted_title
+                file_type = "html"
+            except Exception as e:
+                logger.exception("Extractor failed, falling back to simple HTML parsing: %s", e)
+                soup = BeautifulSoup(r.content, "html.parser")
+                article = soup.find("article") or soup.find(class_="content") or soup.find("main")
+                if article:
+                    text = article.get_text("\n\n", strip=True)
+                else:
+                    body = soup.body
+                    text = body.get_text("\n\n", strip=True) if body else soup.get_text("\n\n", strip=True)
+                content = text
+                file_type = "html"
 
         # Save
         try:
