@@ -315,17 +315,20 @@ def _is_code_heavy_page(soup: BeautifulSoup, url: str) -> bool:
 def _process_code_block(tag) -> str:
     """Extract and format a block-level code element as fenced markdown.
 
-    Inline <code> elements should not be processed by this function.
+    Fences only <pre> or <code> with newlines; skips single-line inline code.
+    Uses sentinels internally to avoid collision with user content containing backticks.
     """
     try:
         # Preserve exact whitespace/indentation
         code = tag.get_text()
         # Trim outer blank lines only
         code = code.strip("\n")
-        if len(code) < 10 and "\n" not in code:
-            # Very short, likely inline-like — skip special wrapping
-            return None
-        return "\n```\n" + code + "\n```\n"
+        # Fence only <pre> or multi-line <code>
+        if tag.name == "pre" or "\n" in code:
+            # Use sentinels to avoid collision with arbitrary ``` in content
+            return "\n__FENCE_START__\n" + code + "\n__FENCE_END__\n"
+        # Single-line <code> is inline; skip fencing
+        return None
     except Exception:
         return None
 
@@ -364,6 +367,13 @@ def _process_list_recursive(list_tag, depth: int = 0) -> list:
         text = _collapse_ws(" ".join([p for p in parts if p])) if parts else ""
 
         if ordered:
+            # Respect per-item <li value> override to match HTML semantics
+            value_override = li.get("value")
+            if value_override:
+                try:
+                    counter = int(value_override)
+                except Exception:
+                    pass
             prefix = f"{counter}. "
             counter += 1
         else:
@@ -451,8 +461,9 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     for tag in list(soup.find_all(True)):
         if _looks_junk(tag):
             try:
-                # If the tag is very substantive, skip removal to avoid over-filtering
-                if _text_len(tag) > 800:
+                # Relax threshold for code-heavy pages to preserve nav/sidebar structure
+                threshold = 400 if is_code_heavy else 800
+                if _text_len(tag) > threshold:
                     continue
                 tag.decompose()
             except Exception:
@@ -480,6 +491,64 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     # Phase C: process each block and linearize
     all_lines = []
     for blk in blocks:
+        # Step 0: For code-heavy pages, preserve blockquote/figure/table structure before unwrapping
+        if is_code_heavy:
+            # Convert blockquotes to prefixed paragraphs
+            for bq in list(blk.find_all("blockquote")):
+                try:
+                    bq_text = bq.get_text("\n", strip=True)
+                    lines = [l.strip() for l in bq_text.split("\n") if l.strip()]
+                    quoted = "\n".join([f"> {line}" for line in lines])
+                    new_p = soup.new_tag("p")
+                    new_p.string = quoted
+                    bq.replace_with(new_p)
+                except Exception:
+                    pass
+            
+            # Convert figures/figcaptions to labeled paragraphs
+            for fig in list(blk.find_all("figure")):
+                try:
+                    caption = fig.find("figcaption")
+                    if caption:
+                        cap_text = caption.get_text(" ", strip=True)
+                        if cap_text:
+                            new_p = soup.new_tag("p")
+                            new_p.string = f"Figure: {cap_text}"
+                            fig.replace_with(new_p)
+                        else:
+                            fig.decompose()
+                    else:
+                        fig.decompose()
+                except Exception:
+                    pass
+            
+            # Convert tables to plaintext grid
+            for table in list(blk.find_all("table")):
+                try:
+                    rows = []
+                    header_row = None
+                    for tr in table.find_all("tr"):
+                        cells = []
+                        for cell in tr.find_all(["th", "td"]):
+                            cells.append(cell.get_text(" ", strip=True))
+                        if cells:
+                            row_text = " | ".join(cells)
+                            if tr.find("th") and header_row is None:
+                                header_row = row_text
+                                rows.append(header_row)
+                                rows.append("-" * len(header_row))
+                            else:
+                                rows.append(row_text)
+                    if rows:
+                        table_text = "\n".join(rows)
+                        new_p = soup.new_tag("p")
+                        new_p.string = table_text
+                        table.replace_with(new_p)
+                    else:
+                        table.decompose()
+                except Exception:
+                    pass
+        
         # Step 1: Process code blocks first (before lists)
         for code_tag in list(blk.find_all(["pre", "code"])):
             # Skip nested code tags to avoid double-processing
@@ -488,6 +557,11 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
             # Skip inline <code> inside paragraphs
             if code_tag.name == "code" and code_tag.find_parent("p") is not None:
                 continue
+            # Skip single-line <code> (not in <pre>) — only fence multi-line code
+            if code_tag.name == "code":
+                code_text = code_tag.get_text()
+                if "\n" not in code_text:
+                    continue
             formatted_code = _process_code_block(code_tag)
             if formatted_code:
                 new_p = soup.new_tag("p")
@@ -571,14 +645,18 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     all_lines = _dedupe_headings(all_lines)
     joined = "\n\n".join([l for l in all_lines if l is not None and l != ""])
 
-    # Collapse whitespace outside fenced code blocks only
+    # Collapse whitespace outside fenced code blocks only (using sentinels to protect code)
     def _collapse_preserving_code(s: str) -> str:
-        parts = re.split(r"(```[\s\S]*?```)", s)
+        """Split on sentinel markers, collapse non-code parts, then replace sentinels with backticks."""
+        parts = re.split(r"(__FENCE_START__[\s\S]*?__FENCE_END__)", s)
         out_parts = []
         for i, part in enumerate(parts):
             if i % 2 == 1:
-                out_parts.append(part)
+                # Code block — replace sentinels with triple backticks and preserve content
+                code_content = part.replace("__FENCE_START__", "```").replace("__FENCE_END__", "```")
+                out_parts.append(code_content)
             else:
+                # Non-code — apply whitespace collapsing
                 out_parts.append(_collapse_ws(part))
         return "".join(out_parts)
 
