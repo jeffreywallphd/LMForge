@@ -1,3 +1,13 @@
+"""
+Content extractor utilities
+
+Capabilities:
+- Multi-block aggregation with junk/CTA/end-of-article detection
+- Metadata extraction (author, published, publisher)
+- Preserves code blocks with markdown-style fenced formatting (```)
+- Handles nested lists (ordered/unordered) with indentation and numbering
+"""
+
 import re
 from bs4 import BeautifulSoup, Comment
 from urllib.parse import urlparse
@@ -18,6 +28,8 @@ _JUNK_HINTS = [
     "breadcrumb", "navigation", "nav-", "menu", "site-header", "site-footer",
     # social / newsletter / cta patterns
     "share-", "social-share", "follow-us", "newsletter-", "signup-", "cta-", "call-to-action",
+    # Newsletter/roundup promotional content patterns
+    "newsletter", "roundup", "news-roundup", "weekly-", "daily-", "newsletter-digest", "news-digest", "email-briefing", "site-briefing",
     # common recommendation/comment vendors
     "outbrain", "taboola", "disqus", "livefyre", "comments-section",
 ]
@@ -196,8 +208,14 @@ def _is_end_of_article(tag) -> bool:
     if any(h in low for h in _END_ARTICLE_HINTS):
         return True
     heading_text = (tag.get_text(" ", strip=True) or "").lower()
+    # If a cutoff-like heading is present, only treat as end-of-article
+    # when the section has little to no substantive content.
     if any(h in heading_text for h in _CUTOFF_HEADINGS):
-        return True
+        try:
+            content_len = len(tag.get_text(" ", strip=True))
+        except Exception:
+            content_len = 0
+        return content_len < 50
     return False
 
 
@@ -226,6 +244,14 @@ def _extract_metadata(soup: BeautifulSoup) -> dict:
             publish_date = t.get("datetime").strip()
         elif t:
             publish_date = t.get_text(" ", strip=True)
+        # Remove extracted time element to avoid duplicate date in body
+        if publish_date and t:
+            try:
+                # Only decompose small, metadata-like <time> elements
+                if len((t.get_text(" ", strip=True) or "")) <= 120:
+                    t.decompose()
+            except Exception:
+                pass
 
     # byline patterns near H1
     if not author:
@@ -234,6 +260,15 @@ def _extract_metadata(soup: BeautifulSoup) -> dict:
             cand = byline.get_text(" ", strip=True)
             if cand:
                 author = cand
+                # Remove the byline container if it appears to be a dedicated byline/author element
+                try:
+                    clsid = (" ".join(byline.get("class", []) or []) + " " + (byline.get("id", "") or "")).lower()
+                    short_text = len(cand) <= 120
+                    looks_byline = any(k in clsid for k in ["byline", "author", "article__byline"]) or cand.lower().startswith("by ")
+                    if looks_byline and short_text:
+                        byline.decompose()
+                except Exception:
+                    pass
         else:
             # scan a small portion of document for "By [Name]"
             text_head = " ".join([p.get_text(" ", strip=True) for p in soup.find_all(limit=20)])
@@ -241,8 +276,110 @@ def _extract_metadata(soup: BeautifulSoup) -> dict:
             m = _re.search(r"\b[Bb]y\s+([A-Z][\w\-]+(?:\s+[A-Z][\w\-]+){0,3})", text_head)
             if m:
                 author = m.group(1)
+                # Attempt to remove the containing element if it primarily consists of the byline text
+                try:
+                    candidates = soup.find_all(["p", "span", "div"], limit=50)
+                    for el in candidates:
+                        txt = (el.get_text(" ", strip=True) or "")
+                        low = txt.lower()
+                        if low.startswith("by ") and len(txt) <= (len(m.group(0)) + 20):
+                            # Ensure it's not a long paragraph with additional content
+                            if len(txt) <= 140:
+                                el.decompose()
+                                break
+                except Exception:
+                    pass
 
     return {"author": author, "publish_date": publish_date, "publisher": publisher}
+
+
+def _is_code_heavy_page(soup: BeautifulSoup, url: str) -> bool:
+    """Detect documentation/technical pages with high code density.
+
+    Heuristic: ratio of <pre>/<code> tags to total blocks, plus URL hints.
+    """
+    try:
+        code_tags = len(soup.find_all(["pre", "code"]))
+        blocks = len(soup.find_all(["p", "section", "article", "div"]))
+        ratio = code_tags / max(blocks, 1)
+    except Exception:
+        ratio = 0.0
+
+    url_l = (url or "").lower()
+    url_hints = any(h in url_l for h in [
+        "docs.", "github.com", "stackoverflow.com", "wiki", "tutorial", "documentation"
+    ])
+    return ratio > 0.15 or url_hints
+
+
+def _process_code_block(tag) -> str:
+    """Extract and format a block-level code element as fenced markdown.
+
+    Inline <code> elements should not be processed by this function.
+    """
+    try:
+        # Preserve exact whitespace/indentation
+        code = tag.get_text()
+        # Trim outer blank lines only
+        code = code.strip("\n")
+        if len(code) < 10 and "\n" not in code:
+            # Very short, likely inline-like — skip special wrapping
+            return None
+        return "\n```\n" + code + "\n```\n"
+    except Exception:
+        return None
+
+
+def _process_list_recursive(list_tag, depth: int = 0) -> list:
+    """Recursively process a <ul>/<ol> into formatted text lines with indentation.
+
+    - Unordered lists: "- " prefix
+    - Ordered lists: "1. ", "2. ", etc. (respects 'start' attribute when present)
+    - Indentation: 2 spaces per nesting level
+    """
+    lines = []
+    indent = "  " * depth
+    ordered = list_tag.name.lower() == "ol"
+    start = 1
+    try:
+        start = int(list_tag.get("start", 1))
+    except Exception:
+        start = 1
+    counter = start
+
+    for li in list_tag.find_all("li", recursive=False):
+        # Gather direct text of this <li> excluding nested lists
+        parts = []
+        for child in li.contents:
+            # Skip nested lists here; they'll be processed recursively below
+            if getattr(child, "name", None) in ("ul", "ol"):
+                continue
+            try:
+                if hasattr(child, "get_text"):
+                    parts.append(child.get_text(" ", strip=True))
+                else:
+                    parts.append(str(child).strip())
+            except Exception:
+                continue
+        text = _collapse_ws(" ".join([p for p in parts if p])) if parts else ""
+
+        if ordered:
+            prefix = f"{counter}. "
+            counter += 1
+        else:
+            prefix = "- "
+
+        if text:
+            lines.append(f"{indent}{prefix}{text}")
+        else:
+            # Allow bare list items with only nested lists
+            pass
+
+        # Process nested lists directly under this <li>
+        for sub in li.find_all(["ul", "ol"], recursive=False):
+            lines.extend(_process_list_recursive(sub, depth + 1))
+
+    return lines
 
 
 def _gather_content_blocks(soup: BeautifulSoup, main_container) -> list:
@@ -299,6 +436,9 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     # Phase A: metadata extraction early (before DOM changes)
     meta = _extract_metadata(soup)
 
+    # Detect code-heavy pages (docs, tutorials) for adjusted formatting
+    is_code_heavy = _is_code_heavy_page(soup, url)
+
     # Remove low-level unwanted tags (scripts/styles/meta/templates) but keep header/footer until later
     for sel in soup.find_all(["script", "style", "noscript", "template", "svg", "iframe", "meta"]):
         sel.decompose()
@@ -307,10 +447,13 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     for c in soup.find_all(string=lambda text: isinstance(text, Comment)):
         c.extract()
 
-    # Remove clearly junk containers site-wide
+    # Remove clearly junk containers site-wide (guard against removing large substantive sections)
     for tag in list(soup.find_all(True)):
         if _looks_junk(tag):
             try:
+                # If the tag is very substantive, skip removal to avoid over-filtering
+                if _text_len(tag) > 800:
+                    continue
                 tag.decompose()
             except Exception:
                 pass
@@ -337,20 +480,37 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     # Phase C: process each block and linearize
     all_lines = []
     for blk in blocks:
-        # Convert lists to bullets
-        for ul in list(blk.find_all(["ul", "ol"])):
-            items = []
-            for li in ul.find_all("li"):
-                text = _collapse_ws(li.get_text(" "))
-                if text:
-                    items.append("- " + text)
-            txt = "\n".join(items)
-            new = soup.new_tag("p")
-            new.string = txt
-            try:
-                ul.replace_with(new)
-            except Exception:
-                pass
+        # Step 1: Process code blocks first (before lists)
+        for code_tag in list(blk.find_all(["pre", "code"])):
+            # Skip nested code tags to avoid double-processing
+            if code_tag.find_parent(["pre", "code"]):
+                continue
+            # Skip inline <code> inside paragraphs
+            if code_tag.name == "code" and code_tag.find_parent("p") is not None:
+                continue
+            formatted_code = _process_code_block(code_tag)
+            if formatted_code:
+                new_p = soup.new_tag("p")
+                new_p["data-code-block"] = "true"
+                new_p.string = formatted_code
+                try:
+                    code_tag.replace_with(new_p)
+                except Exception:
+                    pass
+
+        # Step 2: Process lists with nesting support (replace top-level lists only)
+        for list_tag in list(blk.find_all(["ul", "ol"])):
+            if list_tag.find_parent(["ul", "ol"]):
+                continue
+            formatted_lines = _process_list_recursive(list_tag, depth=0)
+            if formatted_lines:
+                list_text = "\n".join(formatted_lines)
+                new = soup.new_tag("p")
+                new.string = list_text
+                try:
+                    list_tag.replace_with(new)
+                except Exception:
+                    pass
 
         # Unwrap anchors
         for a in list(blk.find_all("a")):
@@ -373,41 +533,67 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
                 pass
 
         # Linearize block
+        promo_heading_keywords = ["roundup", "newsletter", "weekly news", "daily digest", "briefing"]
+        skip_next_short_para = False
         for el in blk.find_all(["h1", "h2", "h3", "h4", "p"]):
             text = _collapse_ws(el.get_text("\n"))
             if not text:
                 continue
+            # Optionally skip immediate short paragraph after a promotional heading
+            if skip_next_short_para and el.name == "p":
+                if len(text) < 200:
+                    skip_next_short_para = False
+                    continue
+                # paragraph is substantive; include and clear flag
+                skip_next_short_para = False
             if el.name.startswith("h"):
+                # Filter out promotional headings with minimal content
+                if el.name in ("h2", "h3"):
+                    low = text.lower()
+                    if _is_heading_like(text) and any(k in low for k in promo_heading_keywords):
+                        # look ahead: mark to skip the next short paragraph
+                        skip_next_short_para = True
+                        continue
                 all_lines.append(text)
                 all_lines.append("")
             else:
-                all_lines.append(text)
+                # Paragraph: if marked as code, preserve formatting exactly
+                if el.get("data-code-block") == "true":
+                    code_text = el.get_text()
+                    all_lines.append(code_text)
+                else:
+                    all_lines.append(text)
 
         # Add separator between blocks
         all_lines.append("")
 
     # Post-process lines
     all_lines = _dedupe_headings(all_lines)
-    body = _collapse_ws("\n\n".join([l for l in all_lines if l is not None and l != ""]))
+    joined = "\n\n".join([l for l in all_lines if l is not None and l != ""])
 
-    # Phase D: prepend metadata if present
+    # Collapse whitespace outside fenced code blocks only
+    def _collapse_preserving_code(s: str) -> str:
+        parts = re.split(r"(```[\s\S]*?```)", s)
+        out_parts = []
+        for i, part in enumerate(parts):
+            if i % 2 == 1:
+                out_parts.append(part)
+            else:
+                out_parts.append(_collapse_ws(part))
+        return "".join(out_parts)
+
+    body = _collapse_preserving_code(joined)
+
+    # Phase D: prepend metadata (always include all fields with N/A fallback)
     meta_lines = []
-    if meta.get("author"):
-        meta_lines.append(f"Author: {meta.get('author')}")
-    if meta.get("publish_date"):
-        meta_lines.append(f"Published: {meta.get('publish_date')}")
-    publisher = meta.get("publisher")
-    if not publisher:
-        try:
-            parsed = urlparse(url or "")
-            publisher = parsed.netloc or ""
-        except Exception:
-            publisher = ""
-    if publisher:
-        meta_lines.append(f"Source: {publisher}")
+    # Use full canonical URL for Source field instead of domain only
+    source_display = url or ""
+    # Always include three lines
+    meta_lines.append(f"Author: {meta.get('author') or 'N/A'}")
+    meta_lines.append(f"Published: {meta.get('publish_date') or 'N/A'}")
+    meta_lines.append(f"Source: {source_display or 'N/A'}")
 
-    if meta_lines:
-        body = _collapse_ws("\n".join(meta_lines) + "\n\n" + body)
+    body = _collapse_ws("\n".join(meta_lines) + "\n\n" + body)
 
     # Title
     title = ""
@@ -430,11 +616,14 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     except Exception:
         site = ""
 
+    # Preserve returned metadata fields; for 'publisher' field in result, keep domain fallback behavior
+    publisher_value = meta.get("publisher") or (urlparse(url or "").netloc or "")
+
     result = {"title": title, "url": url, "site": site, "body": body}
     result.update({
         "author": meta.get("author"),
         "publish_date": meta.get("publish_date"),
-        "publisher": meta.get("publisher") or publisher,
+        "publisher": publisher_value,
     })
 
     return result
