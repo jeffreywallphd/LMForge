@@ -23,24 +23,10 @@ from django.http import StreamingHttpResponse
 import re
 
 def remove_emojis(text):
-    """
-    Removes emojis and other 4-byte characters from a string.
-    """
     if not text:
         return ""
-    # Regex to match most common emojis, symbols, and pictographs
-    emoji_pattern = re.compile(
-        "["
-        "\U0001F600-\U0001F64F"  # emoticons
-        "\U0001F300-\U0001F5FF"  # symbols & pictographs
-        "\U0001F680-\U0001F6FF"  # transport & map symbols
-        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
-        "\u2600-\u26FF"          # miscellaneous symbols
-        "\u2700-\u27BF"          # dingbats
-        "]+",
-        flags=re.UNICODE,
-    )
-    return emoji_pattern.sub(r"", text)
+    # Remove characters outside the Basic Multilingual Plane (BMP)
+    return re.sub(r'[\U00010000-\U0010FFFF]', '', text)
 
 class ScrapeDataView(View):
     def stream_scrape_events(self, request):
@@ -70,18 +56,18 @@ class ScrapeDataView(View):
 
             if source_type == 'reddit':
                 parsed_url = urlparse(url)
-                api_url = url.rstrip('/') + ".json"
                 headers = {'User-Agent': 'My-Django-Scraper-App/1.2'}
                 
-                yield send_event('progress', {'message': f"Requesting data from Reddit API: {api_url}"})
-                response = requests.get(api_url, headers=headers)
-                response.raise_for_status()
-                data = response.json()
-
                 if '/comments/' in parsed_url.path: # Handle specific post
+                    api_url = url.rstrip('/') + ".json"
+                    yield send_event('progress', {'message': f"Requesting data from Reddit API: {api_url}"})
+                    response = requests.get(api_url, headers=headers)
+                    response.raise_for_status()
+                    data = response.json()
+
                     file_type = 'reddit_post'
                     yield send_event('progress', {'message': 'Parsing Reddit post and comments...'})
-                    # ... [Your existing logic for parsing a single post]
+                    
                     post_data = data[0]['data']['children'][0]['data']
                     post_title = post_data.get('title', 'No Title')
                     post_author = post_data.get('author', 'Unknown Author')
@@ -96,33 +82,110 @@ class ScrapeDataView(View):
                     ]
 
                     comments_data = data[1]['data']['children']
-                    for comment in comments_data:
-                        if 'data' in comment and 'body' in comment['data']:
-                            comment_author = comment['data'].get('author', 'Unknown')
-                            comment_body = comment['data'].get('body', '')
-                            content_lines.append(f"\n> u/{comment_author}:\n{comment_body}\n")
                     
+                    # --- Recursive comment helper ---
+                    def get_all_comments(comment_list, depth=0):
+                        if not comment_list:
+                            return
+
+                        for comment in comment_list:
+                            if comment.get('kind') != 't1': # t1 is a comment
+                                continue 
+                                
+                            if 'data' in comment and 'body' in comment['data']:
+                                comment_author = comment['data'].get('author', 'Unknown')
+                                comment_body = comment['data'].get('body', '')
+                                indent = "  " * depth
+                                content_lines.append(f"\n{indent}> u/{comment_author}:\n{indent}{comment_body.replace(chr(10), chr(10) + indent)}\n")
+                                
+                                # Recurse for replies
+                                replies = comment['data'].get('replies')
+                                if replies and 'data' in replies and 'children' in replies['data']:
+                                    get_all_comments(replies['data']['children'], depth + 1)
+                    
+                    get_all_comments(comments_data) # Start recursion
                     scraped_content = "\n".join(content_lines)
 
-
-                elif parsed_url.path.startswith('/r/'): # Handle subreddit
+                elif parsed_url.path.startswith('/r/'): # Handle subreddit (NOW WITH ALL FILTERS)
                     file_type = 'reddit_subreddit_full'
                     subreddit_name = parsed_url.path.split('/')[2]
-                    posts = data['data']['children']
-                    yield send_event('progress', {'message': f'Found {len(posts)} posts in r/{subreddit_name}. Scraping each...'})
+                    base_api_url = f"https://www.reddit.com/r/{subreddit_name}"
+
+                    content_lines = [f"Scraped Posts and Comments from r/{subreddit_name} (All Filters):\n" + "="*40]
                     
-                    content_lines = [f"Scraped Posts and Comments from r/{subreddit_name}:\n" + "="*40]
-                    for i, post_item in enumerate(posts):
+                    # Define the filters to scrape
+                    simple_filters = ['hot', 'new', 'rising', 'best']
+                    top_filters = [
+                        ('hour', 'Now (Top)'), 
+                        ('day', 'Today (Top)'), 
+                        ('week', 'This Week (Top)'), 
+                        ('month', 'This Month (Top)'), 
+                        ('year', 'This Year (Top)'), 
+                        ('all', 'All Time (Top)')
+                    ]
+                    
+                    all_posts_to_scrape = [] # This will hold the 'children' data objects
+                    seen_post_ids = set() # To avoid duplicates
+
+                    # --- 1. Get Simple Filters (hot, new, rising, best) ---
+                    for f in simple_filters:
+                        filter_url = f"{base_api_url}/{f}.json?limit=25"
+                        yield send_event('progress', {'message': f'Requesting /r/{subreddit_name} [{f}] listing...'})
+                        try:
+                            time.sleep(0.5) # Be nice to the API
+                            response = requests.get(filter_url, headers=headers)
+                            response.raise_for_status()
+                            data = response.json()
+                            new_posts = data.get('data', {}).get('children', [])
+                            yield send_event('progress', {'message': f'Found {len(new_posts)} posts in [{f}].'})
+                            
+                            for post_item in new_posts:
+                                post_id = post_item.get('data', {}).get('id')
+                                if post_id and post_id not in seen_post_ids:
+                                    all_posts_to_scrape.append(post_item)
+                                    seen_post_ids.add(post_id)
+                        except Exception as e:
+                            yield send_event('error', {'message': f'Failed to get [{f}] listing: {str(e)}'})
+
+                    # --- 2. Get Top Filters (all time ranges) ---
+                    for t_param, t_name in top_filters:
+                        filter_url = f"{base_api_url}/top.json?t={t_param}&limit=25"
+                        yield send_event('progress', {'message': f'Requesting /r/{subreddit_name} [{t_name}] listing...'})
+                        try:
+                            time.sleep(0.5) # Be nice to the API
+                            response = requests.get(filter_url, headers=headers)
+                            response.raise_for_status()
+                            data = response.json()
+                            new_posts = data.get('data', {}).get('children', [])
+                            yield send_event('progress', {'message': f'Found {len(new_posts)} posts in [{t_name}].'})
+
+                            for post_item in new_posts:
+                                post_id = post_item.get('data', {}).get('id')
+                                if post_id and post_id not in seen_post_ids:
+                                    all_posts_to_scrape.append(post_item)
+                                    seen_post_ids.add(post_id)
+                        except Exception as e:
+                            yield send_event('error', {'message': f'Failed to get [{t_name}] listing: {str(e)}'})
+
+                    # --- 3. Now scrape all the collected, unique posts ---
+                    total_posts_to_scrape = len(all_posts_to_scrape)
+                    yield send_event('progress', {'message': f'Collected {total_posts_to_scrape} unique posts across all filters. Now scraping content and comments...'})
+
+                    for i, post_item in enumerate(all_posts_to_scrape):
                         post_data = post_item['data']
                         post_title = post_data.get('title', 'No Title')
                         permalink = post_data.get('permalink')
 
-                        if not permalink: continue
+                        if not permalink: 
+                            content_lines.append(f"\n[Skipping post with no permalink: {post_title}]")
+                            continue
                         
-                        yield send_event('progress', {'message': f'({i+1}/{len(posts)}) Scraping post: "{post_title}"'})
+                        yield send_event('progress', {'message': f'({i+1}/{total_posts_to_scrape}) Scraping: "{post_title[:50]}..."'})
                         
                         post_api_url = f"https://www.reddit.com{permalink.rstrip('/')}.json"
                         
+                        content_lines.append(f"\n\n{'='*20}\nPOST: {post_title}\n{'='*20}")
+
                         try:
                             time.sleep(0.5) # Respect Reddit's rate limits
                             post_response = requests.get(post_api_url, headers=headers)
@@ -131,31 +194,57 @@ class ScrapeDataView(View):
                             
                             post_content_data = post_and_comment_data[0]['data']['children'][0]['data']
                             post_text = post_content_data.get('selftext', '')
+                            post_author = post_content_data.get('author', 'Unknown')
+                            
+                            content_lines.append(f"Author: u/{post_author}")
+                            
                             if post_text:
                                 content_lines.append(f"\n--- POST CONTENT ---\n{post_text}\n")
+                            else:
+                                content_lines.append(f"\n[No self-text for this post.]\n")
 
                             content_lines.append("--- COMMENTS ---")
                             comments_data = post_and_comment_data[1]['data']['children']
-                            if not comments_data:
-                                content_lines.append("No comments found for this post.")
-                            else:
-                                for comment in comments_data:
+                            
+                            comment_count = 0
+                            def get_all_comments(comment_list, depth=0):
+                                nonlocal comment_count
+                                if not comment_list:
+                                    return
+
+                                for comment in comment_list:
+                                    if comment.get('kind') != 't1': # t1 is a comment
+                                        continue 
+                                        
                                     if 'data' in comment and 'body' in comment['data']:
                                         comment_author = comment['data'].get('author', 'Unknown')
                                         comment_body = comment['data'].get('body', '')
-                                        content_lines.append(f"\n> u/{comment_author}:\n{comment_body}\n")
+                                        indent = "  " * depth
+                                        content_lines.append(f"\n{indent}> u/{comment_author}:\n{indent}{comment_body.replace(chr(10), chr(10) + indent)}\n")
+                                        comment_count += 1
+                                        
+                                        # Recurse for replies
+                                        replies = comment['data'].get('replies')
+                                        if replies and 'data' in replies and 'children' in replies['data']:
+                                            get_all_comments(replies['data']['children'], depth + 1)
+                            
+                            get_all_comments(comments_data)
+                            
+                            if comment_count == 0:
+                                content_lines.append("No comments found for this post.")
+
                         except Exception as post_e:
-                            content_lines.append(f"\n[Could not fetch content for post. Error: {str(post_e)}]")
+                            content_lines.append(f"\n[Could not fetch content for post '{post_title}'. Error: {str(post_e)}]")
                     
                     scraped_content = "\n".join(content_lines)
+                    yield send_event('progress', {'message': 'All subreddit scraping complete.'})
 
                 else:
-                    yield send_event('error', {'message': 'Invalid Reddit URL.'})
+                    yield send_event('error', {'message': 'Invalid Reddit URL. Must be a post or a subreddit.'})
                     return
             else:
                 # --- This block handles generic (non-Reddit) URLs ---
                 yield send_event('progress', {'message': 'Scraping generic URL...'})
-                # ... [Your existing logic for handling generic URLs]
                 response = requests.get(url)
                 response.raise_for_status()
                 content_type = response.headers.get('Content-Type', '').lower()
