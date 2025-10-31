@@ -5,6 +5,17 @@
 
 {% block content %}
 
+{% if messages %}
+<div class="alert alert-info">
+    <ul class="mb-0">
+        {% for message in messages %}
+        <li>{{ message }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+
 
 
 <div class="container mt-5">
@@ -27,6 +38,7 @@
             <option value="url">Scrape from URL</option>
             <option value="pdf">Upload PDF</option>
             <option value="text">Enter Text</option>
+			<option value="reddit">Reddit URL</option>
         </select>
     </div>
 
@@ -62,11 +74,14 @@
     document.getElementById('inputMethod').addEventListener('change', function () {
         const selectedOption = this.value;
 
+        // Hide all sections first
         document.getElementById('urlSection').style.display = 'none';
         document.getElementById('pdfSection').style.display = 'none';
         document.getElementById('textSection').style.display = 'none';
-
-        if (selectedOption === 'url') {
+        
+        // --- MODIFICATION ---
+        // Show the URL section if the user selects either 'url' OR 'reddit'
+        if (selectedOption === 'url' || selectedOption === 'reddit') {
             document.getElementById('urlSection').style.display = 'block';
         } else if (selectedOption === 'pdf') {
             document.getElementById('pdfSection').style.display = 'block';
@@ -80,13 +95,27 @@
     document.getElementById('scrapeBtn').addEventListener('click', () => {
         const url = document.getElementById('url').value;
         const title = document.getElementById('title').value;
+        // Get the currently selected input method
+        const selectedMethod = document.getElementById('inputMethod').value;
 
         if (!url || !title) {
-            alert('Please provide both URL, output and a title file name.');
+            alert('Please provide both a URL and a title.');
             return;
         }
 
-        fetch(`/api/scrape/?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`)
+        // --- MODIFICATION START ---
+
+        // 1. Build the base URL for the fetch request
+        let fetchUrl = `/api/scrape/?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`;
+
+        // 2. Check if the selected method is 'reddit' and append the required parameter
+        if (selectedMethod === 'reddit') {
+            fetchUrl += '&source_type=reddit';
+        }
+
+        // 3. Use the newly constructed URL in the fetch call
+        fetch(fetchUrl)
+        // --- MODIFICATION END ---
             .then(response => {
                 if (!response.ok) {
                     throw new Error(`HTTP error! Status: ${response.status}`);
@@ -103,6 +132,7 @@
 
                     let content = '';
 
+                    // This part handles the display, including the new reddit_post types
                     if (data.file_type === 'xml') {
                         const parser = new DOMParser();
                         const xmlDoc = parser.parseFromString(data.content, 'application/xml');
@@ -110,7 +140,7 @@
                         content = `<pre>${escapeXML(prettyPrintXML(xmlString))}</pre>`;
                     } else if (data.file_type === 'html') {
                         content = `<pre>${escapeHTML(data.content)}</pre>`;
-                    } else if (data.file_type === 'json' || data.file_type === 'csv') {
+                    } else if (data.file_type === 'json' || data.file_type === 'csv' || data.file_type === 'reddit_post' || data.file_type === 'reddit_subreddit_full') {
                         content = `<pre>${data.content}</pre>`;
                     } else if (data.file_type === 'xlsx') {
                         content = `<p>Excel file content available. <a href="/download/${data.id}">Download</a></p>`;

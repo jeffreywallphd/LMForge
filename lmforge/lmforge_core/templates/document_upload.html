@@ -16,10 +16,6 @@
 </div>
 {% endif %}
 
-<div id="scrapedData" style="display: none;">
-    <h2 id="scrapedTitle"></h2>
-    <div id="scrapedContent"></div>
-</div>
 
 <div class="container mt-5">
     <h1>Document Processor</h1>
@@ -41,12 +37,15 @@
             <option value="url">Scrape from URL</option>
             <option value="pdf">Upload PDF</option>
             <option value="text">Enter Text</option>
+			<option value="reddit">Reddit URL</option>
         </select>
     </div>
 
     <!-- URL Input Section -->
     <div id="urlSection" class="input-section" style="display: none;">
         {% include "processor_url.html" %}
+
+        <div id="liveFeedback" class="list-group mb-3"></div>
 
         <div id="result" class="mb-4"></div>
     </div>
@@ -74,17 +73,23 @@
 
 </div>
 
-
+<div id="scrapedData" style="display: none;">
+    <h2 id="scrapedTitle"></h2>
+    <div id="scrapedContent"></div>
+</div>
 
 <script>
     document.getElementById('inputMethod').addEventListener('change', function () {
         const selectedOption = this.value;
 
+        // Hide all sections first
         document.getElementById('urlSection').style.display = 'none';
         document.getElementById('pdfSection').style.display = 'none';
         document.getElementById('textSection').style.display = 'none';
-
-        if (selectedOption === 'url') {
+        
+        // --- MODIFICATION ---
+        // Show the URL section if the user selects either 'url' OR 'reddit'
+        if (selectedOption === 'url' || selectedOption === 'reddit') {
             document.getElementById('urlSection').style.display = 'block';
         } else if (selectedOption === 'pdf') {
             document.getElementById('pdfSection').style.display = 'block';
@@ -93,6 +98,8 @@
         }
     });
 </script>
+
+
 
 <script>
 
@@ -113,47 +120,93 @@
     document.getElementById('scrapeBtn').addEventListener('click', () => {
         const url = document.getElementById('url').value;
         const title = document.getElementById('title').value;
+        const selectedMethod = document.getElementById('inputMethod').value;
+        
+        // --- Get references to UI elements ---
+        const resultDiv = document.getElementById('result');
+        const feedbackDiv = document.getElementById('liveFeedback');
+        const scrapedDataDiv = document.getElementById('scrapedData');
+        const scrapedContentDiv = document.getElementById('scrapedContent');
+        
+        // --- Clear previous results ---
+        resultDiv.innerHTML = '';
+        feedbackDiv.innerHTML = '';
+        scrapedDataDiv.style.display = 'none';
 
         if (!url || !title) {
-            alert('Please provide both URL, output and a title file name.');
+            alert('Please provide both a URL and a title.');
             return;
         }
 
-        fetch(`/api/scrape/?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! Status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                const resultDiv = document.getElementById('result');
+        let fetchUrl = `/api/scrape/?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`;
 
+        if (selectedMethod === 'reddit') {
+            fetchUrl += '&source_type=reddit';
+        }
+        
+        // --- Use EventSource instead of fetch ---
+        const eventSource = new EventSource(fetchUrl);
 
-                if (data.success) {
-                    setTimeout(1000);
-                    addDocumentToList(title, "Scraped successfully.");
-                } else if (data.error) {
-                    resultDiv.innerHTML = `<p class="text-danger">${data.error}</p>`;
+        // --- Handle incoming messages from the server ---
+        eventSource.onmessage = function(event) {
+            const parsedData = JSON.parse(event.data);
+            const messageType = parsedData.type;
+            const data = parsedData.data;
+
+            if (messageType === 'progress') {
+                // Add new progress update to the top of the feedback list
+                const feedbackItem = document.createElement('a');
+                feedbackItem.className = 'list-group-item list-group-item-action';
+                feedbackItem.textContent = data.message;
+                feedbackDiv.prepend(feedbackItem); // prepend to show latest first
+            } 
+            else if (messageType === 'complete') {
+                // The process is done, display the final data
+                resultDiv.innerHTML = `<p class="text-success">${data.success}</p>`;
+                
+                let content = '';
+                // Handle display of different file types
+                if (data.file_type === 'xml') {
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(data.content, 'application/xml');
+                    const xmlString = new XMLSerializer().serializeToString(xmlDoc);
+                    content = `<pre>${escapeXML(prettyPrintXML(xmlString))}</pre>`;
+                } else if (['html', 'reddit_post', 'reddit_subreddit_full', 'json', 'csv'].includes(data.file_type)) {
+                    content = `<pre>${escapeHTML(data.content)}</pre>`;
+                } else if (data.file_type === 'xlsx') {
+                    content = `<p>Excel file content available. <a href="/download/${data.id}">Download</a></p>`;
                 }
-            })
-            .catch(error => {
-                console.error('An error occurred:', error);
-                document.getElementById('result').innerHTML = `<p class="text-danger">An error occurred: ${error.message}</p>`;
-            });
+                
+                scrapedContentDiv.innerHTML = `<h3>Data from ${data.url} (${data.file_type})</h3>${content}`;
+                scrapedDataDiv.style.display = 'block';
+
+                // --- Close the connection ---
+                eventSource.close();
+            }
+            else if (messageType === 'error') {
+                resultDiv.innerHTML = `<p class="text-danger">${data.message}</p>`;
+                eventSource.close();
+            }
+        };
+
+        // --- Handle any errors with the connection ---
+        eventSource.onerror = function(err) {
+            console.error('EventSource failed:', err);
+            resultDiv.innerHTML = `<p class="text-danger">An error occurred with the live connection. Please check the console.</p>`;
+            eventSource.close();
+        };
     });
 
     document.getElementById('uploadBtn').addEventListener('click', () => {
         const pdfFile = document.getElementById('pdfUpload').files[0];
         const outputFormat = document.getElementById('output_format').value;
         const title = document.getElementById('title').value;
-
+        console.log(title)
         if (!pdfFile) {
             alert('Please upload a PDF file.');
             return;
         }
-
-        else if (!title) {
+        else if (!title){
             alert("Please provide a title");
             return;
         }
@@ -176,9 +229,24 @@
             .then(data => {
                 const uploadResultDiv = document.getElementById('uploadResult');
                 if (data.success) {
-                    setTimeout(1000);
-                    addDocumentToList(title, "Uploaded successfully.");
+                    uploadResultDiv.innerHTML = `<p class="text-success">${data.success}</p>`;
 
+                    const scrapedDataDiv = document.getElementById('scrapedData');
+                    const scrapedContentDiv = document.getElementById('scrapedContent');
+                    let content = '';
+
+                    if (data.file_type === 'html') {
+                        content = `<pre>${escapeHTML(data.content)}</pre>`;
+                    } else if (data.file_type === 'json') {
+                        content = `<pre>${JSON.stringify(data.content, null, 4)}</pre>`;
+                    }
+
+                    scrapedContentDiv.innerHTML = `
+                        <h3>Converted PDF Content (${data.file_type.toUpperCase()})</h3>
+                        ${content}
+                    `;
+
+                    scrapedDataDiv.style.display = 'block';
                 } else if (data.error) {
                     uploadResultDiv.innerHTML = `<p class="text-danger">${data.error}</p>`;
                 }
@@ -198,12 +266,16 @@
             return;
         }
 
+        else if(!title){
+            alert("Please provide a title")
+            return;
+        }
+
         fetch('/api/save_manual_text/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ text: manualText }),
             body: JSON.stringify({ text: manualText, title: title }),
         })
             .then(response => {
@@ -215,8 +287,17 @@
             .then(data => {
                 const manualTextResultDiv = document.getElementById('manualTextResult');
                 if (data.success) {
-                    addDocumentToList(title, "Saved successfully.");
-                    setTimeout(1000);
+                    manualTextResultDiv.innerHTML = `<p class="text-success">${data.success}</p>`;
+
+                    const scrapedDataDiv = document.getElementById('scrapedData');
+                    const scrapedContentDiv = document.getElementById('scrapedContent');
+
+                    scrapedContentDiv.innerHTML = `
+                        <h3>Manually Entered Text</h3>
+                        <pre>${escapeHTML(manualText)}</pre>
+                    `;
+
+                    scrapedDataDiv.style.display = 'block';
                 } else if (data.error) {
                     manualTextResultDiv.innerHTML = `<p class="text-danger">${data.error}</p>`;
                 }
@@ -226,7 +307,6 @@
                 document.getElementById('manualTextResult').innerHTML = `<p class="text-danger">An error occurred: ${error.message}</p>`;
             });
     });
-
 
     function escapeHTML(str) {
         return str
