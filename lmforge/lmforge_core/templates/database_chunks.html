@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="container mt-4">
+  <h2>Generate Chunks & Store in Vector DB</h2>
+
+  <p class="text-muted">
+    Selected documents will be processed into text chunks and stored in Qdrant.
+  </p>
+
+  {% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+  {% if success %}
+  <div class="alert alert-success">{{ success }}</div>
+  {% endif %}
+
+  <form id="collectionForm" method="POST">
+    {% csrf_token %}
+
+    <!-- Selected Documents (hidden inputs from redirect) -->
+    {% if selected_document_ids %}
+      {% for doc_id in selected_document_ids %}
+        <input type="hidden" name="selected_documents" value="{{ doc_id }}">
+      {% endfor %}
+    {% endif %}
+
+    <div class="mb-3">
+      <label for="collection_name_select" class="form-label">Select Existing Collection</label>
+      <select id="collection_name_select" name="collection_name" class="form-select">
+        <option value="">-- Select existing collection --</option>
+        {% for col in existing_collections %}
+          <option value="{{ col }}">{{ col }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label for="new_collection_name" class="form-label">Or Create New Collection</label>
+      <input
+        type="text"
+        id="new_collection_name"
+        name="new_collection_name"
+        class="form-control"
+        placeholder="Enter new collection name"
+      >
+    </div>
+
+    <button type="submit" class="btn btn-primary">
+      Store Chunks in Qdrant
+    </button>
+  </form>
+
+  <hr>
+  <h5 class="mt-4">Selected Documents:</h5>
+  {% if documents %}
+    <ul>
+      {% for doc in documents %}
+      <li>{{ doc.name }}</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-muted">No documents selected.</p>
+  {% endif %}
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  const form = document.getElementById("collectionForm");
+  const select = document.getElementById("collection_name_select");
+  const input = document.getElementById("new_collection_name");
+
+  form.addEventListener("submit", function(e) {
+    const selected = select.value.trim();
+    const newCollection = input.value.trim();
+
+    // Require either an existing or new collection
+    if (!selected && !newCollection) {
+      e.preventDefault();
+      alert("Please select an existing collection or enter a new one.");
+      return false;
+    }
+
+    // Prefer new collection name if entered
+    if (newCollection) {
+      select.value = newCollection;
+    }
+  });
+});
+</script>
+
+{% endblock %}
