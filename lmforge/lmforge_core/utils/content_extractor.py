@@ -58,8 +58,19 @@ _NOISE_PHRASES = [
 
 # Headings that should trigger cutting off remaining blocks when encountered in plain text
 _CUTOFF_HEADINGS = [
+    # Existing entries
     "related articles", "more resources", "about the author", "you might also like",
     "further reading", "references",
+    # Single-word promotional headings
+    "resources", "explore", "discover", "learn", "share", "subscribe", "follow", "connect",
+    # Multi-word promotional headings
+    "learn more", "explore more", "related content", "additional resources", "see also",
+    "next steps", "recommended reading", "popular articles", "trending now",
+    "what to read next", "continue exploring", "dive deeper", "keep reading",
+    "more on this topic", "related topics", "similar articles", "you may also like",
+    "recommended for you", "editor's picks", "featured content", "latest updates",
+    "stay informed", "join the conversation", "get in touch", "contact us",
+    "about us", "our team",
 ]
 
 # Bad line prefixes to drop in plaintext (copyright, legal boilerplate)
@@ -212,17 +223,171 @@ def _is_end_of_article(tag) -> bool:
     # when the section has little to no substantive content.
     if any(h in heading_text for h in _CUTOFF_HEADINGS):
         try:
-            content_len = len(tag.get_text(" ", strip=True))
+            content_text = tag.get_text(" ", strip=True)
+            content_len = len(content_text)
+            
+            # Check for high link-to-text ratio (indicates promotional link list)
+            links = tag.find_all('a') if hasattr(tag, 'find_all') else []
+            link_text_len = sum(len((link.get_text(" ", strip=True) or "")) for link in links)
+            if content_len > 0 and link_text_len / content_len > 0.7:
+                return True
+            
+            # Check for common CTA phrases
+            content_lower = content_text.lower()
+            cta_phrases = ["click here", "read more", "sign up now", "learn more", "get started"]
+            if any(phrase in content_lower for phrase in cta_phrases):
+                return True
+                
         except Exception:
             content_len = 0
-        return content_len < 50
+        return content_len < 100
     return False
 
 
-def _extract_metadata(soup: BeautifulSoup) -> dict:
+def _is_trailing_empty_heading(heading_text: str, remaining_elements: list) -> bool:
+    """Check if a heading is a trailing promotional heading with no substantive content following it.
+    
+    Args:
+        heading_text: The text content of the heading being evaluated
+        remaining_elements: List of subsequent elements (tags) after this heading
+        
+    Returns:
+        True if the heading appears to be a trailing promotional heading with no substantive content
+    """
+    if not heading_text:
+        return False
+    
+    # Normalize heading text
+    normalized = heading_text.strip().lower()
+    
+    # Check if heading matches cutoff patterns
+    matches_cutoff = any(cutoff in normalized for cutoff in _CUTOFF_HEADINGS)
+    if not matches_cutoff:
+        return False
+    
+    # If no remaining elements, this is a trailing heading
+    if not remaining_elements:
+        return True
+    
+    # Analyze remaining content after the heading
+    # Single-word headings require more substantive content
+    is_single_word = len(normalized.split()) == 1
+    threshold = 150 if is_single_word else 100
+    
+    # Look ahead at next 3-5 elements
+    lookahead_count = min(5, len(remaining_elements))
+    for i in range(lookahead_count):
+        el = remaining_elements[i]
+        
+        # Skip other headings
+        if hasattr(el, 'name') and el.name and el.name.startswith('h'):
+            continue
+        
+        # Check paragraph/div elements for substantive text
+        if hasattr(el, 'get_text'):
+            text = el.get_text(" ", strip=True)
+            # Ignore very short content
+            if len(text) < 20:
+                continue
+            # Found substantive content
+            if len(text) > threshold:
+                return False
+    
+    # No substantive content found in lookahead
+    return True
+
+
+
+def _extract_metadata(soup: BeautifulSoup, url: str = None) -> dict:
     author = None
     publish_date = None
     publisher = None
+    version = None
+    last_updated = None
+
+    # Extract version from URL
+    if url:
+        import re as _re
+        # Pattern 1: /locale/{version}/ or /docs/{version}/ with end boundary (e.g., Django /en/5.2/)
+        match = _re.search(r'/(?:[a-z]{2}(?:-[a-z]{2})?|docs)/([0-9]+\.[0-9]+(?:\.[0-9]+)?)(?:/|$)', url)
+        if not match:
+            # Pattern 2: /{major}.{minor}/ or /{major}.{minor}.{patch}/ with end boundary (e.g., Python /3.12/)
+            match = _re.search(r'/([0-9]+\.[0-9]+(?:\.[0-9]+)?)(?:/|$)', url)
+        if not match:
+            # Pattern 3: /v{version}/ with end boundary (e.g., /v2.5/)
+            match = _re.search(r'/v([0-9]+\.[0-9]+(?:\.[0-9]+)?)(?:/|$)', url)
+        if not match:
+            # Pattern 4: /version/{version}/ or /release/{version}/ with end boundary
+            match = _re.search(r'/(?:version|release)/([0-9]+\.[0-9]+(?:\.[0-9]+)?)(?:/|$)', url)
+        if not match:
+            # Pattern 5: major-only versions with doc path hints (e.g., /v3/ or /3/)
+            if _re.search(r'/(?:doc|api|ref|guide|manual)', url, _re.IGNORECASE):
+                match = _re.search(r'/v([0-9]+)(?:/|$)', url)
+                if not match:
+                    match = _re.search(r'/([0-9]+)(?:/|$)', url)
+        if match:
+            version = match.group(1)
+
+    # Extract last updated date
+    # Check meta tags first (highest priority)
+    meta_modified = soup.find("meta", attrs={"property": "article:modified_time"}) or soup.find("meta", attrs={"name": "last-modified"})
+    if meta_modified and meta_modified.get("content"):
+        last_updated = meta_modified.get("content").strip()
+    
+    # Additional meta tag fallbacks
+    if not last_updated:
+        meta_updated = soup.find("meta", attrs={"property": "og:updated_time"})
+        if meta_updated and meta_updated.get("content"):
+            last_updated = meta_updated.get("content").strip()
+    
+    if not last_updated:
+        meta_revised = soup.find("meta", attrs={"name": "revised"})
+        if meta_revised and meta_revised.get("content"):
+            last_updated = meta_revised.get("content").strip()
+    
+    if not last_updated:
+        # Check for itemprop='dateModified' on meta or time tags
+        itemprop_modified = soup.find("meta", attrs={"itemprop": "dateModified"}) or soup.find("time", attrs={"itemprop": "dateModified"})
+        if itemprop_modified:
+            if itemprop_modified.get("content"):
+                last_updated = itemprop_modified.get("content").strip()
+            elif itemprop_modified.get("datetime"):
+                last_updated = itemprop_modified.get("datetime").strip()
+    
+    # Search for dedicated "last updated" elements if meta tags not found
+    if not last_updated:
+        # Look for elements with "last-updated" or "last-modified" in class/id
+        def class_has_last_updated(v):
+            if not v:
+                return False
+            # Handle both list/tuple and string types
+            if isinstance(v, (list, tuple)):
+                normalized = ' '.join(v).lower()
+            else:
+                normalized = v.lower()
+            return 'last-updated' in normalized or 'last-modified' in normalized
+        
+        last_updated_el = soup.find(class_=class_has_last_updated)
+        if not last_updated_el:
+            # Search for elements containing "last updated" or "last modified" text
+            import re as _re
+            for tag in soup.find_all(['footer', 'div', 'span', 'p', 'time']):
+                text = tag.get_text(" ", strip=True)
+                if _re.search(r'\b(?:last\s+(?:updated|modified)|updated\s+on|modified\s+on)\b', text, _re.IGNORECASE):
+                    last_updated_el = tag
+                    break
+        
+        if last_updated_el:
+            # Prefer datetime attribute for <time> tags
+            if last_updated_el.name == 'time' and last_updated_el.get('datetime'):
+                last_updated = last_updated_el.get('datetime').strip()
+            else:
+                # Extract text and clean it
+                text = last_updated_el.get_text(" ", strip=True)
+                # Remove common prefixes
+                import re as _re
+                text = _re.sub(r'^(?:last\s+(?:updated|modified)|updated\s+on|modified\s+on)[\s:]*', '', text, flags=_re.IGNORECASE)
+                last_updated = text.strip() if text else None
 
     # meta tags
     meta_author = soup.find("meta", attrs={"name": "author"}) or soup.find("meta", attrs={"property": "article:author"})
@@ -290,7 +455,7 @@ def _extract_metadata(soup: BeautifulSoup) -> dict:
                 except Exception:
                     pass
 
-    return {"author": author, "publish_date": publish_date, "publisher": publisher}
+    return {"author": author, "publish_date": publish_date, "publisher": publisher, "version": version, "last_updated": last_updated}
 
 
 def _is_code_heavy_page(soup: BeautifulSoup, url: str) -> bool:
@@ -312,11 +477,90 @@ def _is_code_heavy_page(soup: BeautifulSoup, url: str) -> bool:
     return ratio > 0.15 or url_hints
 
 
+def _detect_code_language(tag, code_text: str) -> str:
+    """Detect programming language from tag classes or code content patterns.
+    
+    Returns normalized language name (e.g., 'python', 'bash', 'javascript') or empty string.
+    """
+    # Language normalization mapping
+    lang_map = {
+        'sh': 'bash', 'shell': 'bash', 'console': 'bash', 'terminal': 'bash',
+        'ps1': 'powershell', 'ps': 'powershell', 'pwsh': 'powershell',
+        'js': 'javascript', 'node': 'javascript',
+        'ts': 'typescript',
+        'py': 'python',
+        'c++': 'cpp',
+        'c#': 'csharp',
+        'objective-c': 'objectivec',
+        'f#': 'fsharp',
+        'vb.net': 'vbnet',
+    }
+    
+    # Known standalone language names
+    known_langs = {
+        'python', 'javascript', 'bash', 'java', 'cpp', 'ruby', 'go', 'rust',
+        'typescript', 'sql', 'yaml', 'json', 'xml', 'html', 'css', 'php',
+        'swift', 'kotlin', 'csharp', 'powershell', 'perl', 'r', 'scala',
+        'dart', 'elixir', 'haskell', 'lua', 'matlab', 'objectivec', 'groovy',
+        'fsharp', 'vbnet'
+    }
+    
+    try:
+        # Check tag classes first
+        classes = tag.get('class', []) if hasattr(tag, 'get') else []
+        for cls in classes:
+            cls_lower = cls.lower()
+            # Pattern: language-*, highlight-*, hljs-*, lang-*, brush:*
+            for prefix in ['language-', 'highlight-', 'hljs-', 'lang-', 'brush:']:
+                if cls_lower.startswith(prefix):
+                    lang = cls_lower[len(prefix):].strip()
+                    normalized = lang_map.get(lang, lang)
+                    if normalized in known_langs or lang in known_langs:
+                        return normalized if normalized in known_langs else lang
+            # Direct language name as class
+            if cls_lower in known_langs or cls_lower in lang_map:
+                return lang_map.get(cls_lower, cls_lower)
+        
+        # Check parent <pre> if tag is <code>
+        if tag.name == 'code':
+            parent = tag.find_parent('pre')
+            if parent:
+                parent_classes = parent.get('class', [])
+                for cls in parent_classes:
+                    cls_lower = cls.lower()
+                    for prefix in ['language-', 'highlight-', 'hljs-', 'lang-', 'brush:']:
+                        if cls_lower.startswith(prefix):
+                            lang = cls_lower[len(prefix):].strip()
+                            normalized = lang_map.get(lang, lang)
+                            if normalized in known_langs or lang in known_langs:
+                                return normalized if normalized in known_langs else lang
+                    if cls_lower in known_langs or cls_lower in lang_map:
+                        return lang_map.get(cls_lower, cls_lower)
+        
+        # Analyze code content for shell prompts
+        lines = [l.strip() for l in code_text.split('\n') if l.strip()]
+        if len(lines) >= 2:
+            dollar_count = sum(1 for l in lines[:10] if l.startswith('$'))
+            # PowerShell: require PS> or C:\> patterns, not bare >
+            powershell_count = sum(1 for l in lines[:10] if l.startswith('PS>') or l.startswith('C:\\>'))
+            check_count = min(len(lines[:10]), 10)
+            
+            if check_count > 0:
+                if dollar_count / check_count > 0.5:
+                    return 'bash'
+                if powershell_count / check_count > 0.5:
+                    return 'powershell'
+    except Exception:
+        pass
+    
+    return ''
+
+
 def _process_code_block(tag) -> str:
     """Extract and format a block-level code element as fenced markdown.
 
     Fences only <pre> or <code> with newlines; skips single-line inline code.
-    Uses sentinels internally to avoid collision with user content containing backticks.
+    Uses sentinels with language hints to generate language-aware fenced code blocks.
     """
     try:
         # Preserve exact whitespace/indentation
@@ -325,8 +569,10 @@ def _process_code_block(tag) -> str:
         code = code.strip("\n")
         # Fence only <pre> or multi-line <code>
         if tag.name == "pre" or "\n" in code:
-            # Use sentinels to avoid collision with arbitrary ``` in content
-            return "\n__FENCE_START__\n" + code + "\n__FENCE_END__\n"
+            # Detect language from classes or content
+            lang = _detect_code_language(tag, code)
+            # Use sentinels with language embedded: __FENCE_START__{lang}__
+            return f"\n__FENCE_START__{lang}__\n{code}\n__FENCE_END__\n"
         # Single-line <code> is inline; skip fencing
         return None
     except Exception:
@@ -436,6 +682,72 @@ def _gather_content_blocks(soup: BeautifulSoup, main_container) -> list:
     return blocks
 
 
+def _strip_trailing_promotional_headings(lines: list) -> list:
+    """Remove trailing promotional headings from the end of the content.
+    
+    Args:
+        lines: List of text lines from the article
+        
+    Returns:
+        Cleaned list with trailing promotional headings removed
+    """
+    if not lines:
+        return lines
+    
+    # Only process the last 20-30 lines for efficiency
+    process_count = min(30, len(lines))
+    cutoff_index = len(lines) - process_count
+    
+    # Don't remove headings from the first 30% of the document
+    min_keep_index = int(len(lines) * 0.3)
+    
+    # Iterate backwards to find trailing promotional content
+    removal_start_index = len(lines)
+    
+    for i in range(len(lines) - 1, max(cutoff_index - 1, min_keep_index - 1), -1):
+        line = lines[i].strip()
+        
+        # Empty line - continue searching backwards
+        if not line:
+            continue
+        
+        # Check if line matches cutoff heading
+        line_lower = line.lower()
+        is_cutoff_heading = any(cutoff in line_lower for cutoff in _CUTOFF_HEADINGS)
+        
+        if is_cutoff_heading:
+            # Check if this is followed by substantive content
+            has_substantive_content = False
+            
+            # Look at next 5-10 lines after this heading
+            for j in range(i + 1, min(i + 11, len(lines))):
+                next_line = lines[j].strip()
+                if len(next_line) > 100:
+                    has_substantive_content = True
+                    break
+                # Check for reference/citation patterns (URLs, formatted citations)
+                if any(pattern in next_line for pattern in ['http://', 'https://', 'doi:', 'isbn:']):
+                    has_substantive_content = True
+                    break
+            
+            if not has_substantive_content:
+                # Mark for removal
+                removal_start_index = i
+            else:
+                # Found substantive content, stop removing
+                break
+        else:
+            # Non-empty, non-heading line with substantive content
+            if len(line) > 50 and not any(cutoff in line_lower for cutoff in _CUTOFF_HEADINGS):
+                # Stop - this is real content
+                break
+    
+    # Return cleaned list
+    if removal_start_index < len(lines):
+        return lines[:removal_start_index]
+    return lines
+
+
 def extract_article_content(html_bytes: bytes, url: str) -> dict:
     """Extracts a cleaned article body and metadata from HTML bytes.
 
@@ -444,7 +756,7 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     soup = BeautifulSoup(html_bytes, "html.parser")
 
     # Phase A: metadata extraction early (before DOM changes)
-    meta = _extract_metadata(soup)
+    meta = _extract_metadata(soup, url)
 
     # Detect code-heavy pages (docs, tutorials) for adjusted formatting
     is_code_heavy = _is_code_heavy_page(soup, url)
@@ -607,12 +919,25 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
                 pass
 
         # Linearize block
-        promo_heading_keywords = ["roundup", "newsletter", "weekly news", "daily digest", "briefing"]
+        promo_heading_keywords = [
+            "roundup", "newsletter", "weekly news", "daily digest", "briefing",
+            "news roundup", "weekly roundup", "daily roundup", "monthly digest",
+            "email digest", "subscribe", "sign up", "join us", "stay updated",
+            "get notified", "latest updates", "breaking news", "top stories",
+            "this week", "this month"
+        ]
         skip_next_short_para = False
-        for el in blk.find_all(["h1", "h2", "h3", "h4", "p"]):
+        
+        # Convert to indexed iteration for lookahead capability
+        elements = blk.find_all(["h1", "h2", "h3", "h4", "p"])
+        
+        for idx, el in enumerate(elements):
             text = _collapse_ws(el.get_text("\n"))
             if not text:
                 continue
+            # Remove pilcrow (¶) anchor symbols from headings used in documentation sites
+            if el.name.startswith("h"):
+                text = text.replace('¶', '').strip()
             # Optionally skip immediate short paragraph after a promotional heading
             if skip_next_short_para and el.name == "p":
                 if len(text) < 200:
@@ -621,6 +946,11 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
                 # paragraph is substantive; include and clear flag
                 skip_next_short_para = False
             if el.name.startswith("h"):
+                # Check if this is a trailing empty heading (NEW - before promotional filter)
+                remaining_elements = elements[idx+1:] if idx+1 < len(elements) else []
+                if _is_trailing_empty_heading(text, remaining_elements):
+                    continue
+                
                 # Filter out promotional headings with minimal content
                 if el.name in ("h2", "h3"):
                     low = text.lower()
@@ -643,18 +973,38 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
 
     # Post-process lines
     all_lines = _dedupe_headings(all_lines)
+    all_lines = _strip_trailing_promotional_headings(all_lines)
     joined = "\n\n".join([l for l in all_lines if l is not None and l != ""])
 
     # Collapse whitespace outside fenced code blocks only (using sentinels to protect code)
     def _collapse_preserving_code(s: str) -> str:
-        """Split on sentinel markers, collapse non-code parts, then replace sentinels with backticks."""
-        parts = re.split(r"(__FENCE_START__[\s\S]*?__FENCE_END__)", s)
+        """Split on sentinel markers, extract language, collapse non-code parts, inject language into fences."""
+        parts = re.split(r"(__FENCE_START__.*?__[\s\S]*?__FENCE_END__)", s)
         out_parts = []
         for i, part in enumerate(parts):
             if i % 2 == 1:
-                # Code block — replace sentinels with triple backticks and preserve content
-                code_content = part.replace("__FENCE_START__", "```").replace("__FENCE_END__", "```")
-                out_parts.append(code_content)
+                # Code block — extract language from sentinel and generate fence
+                try:
+                    # Pattern: __FENCE_START__{lang}__\ncode\n__FENCE_END__
+                    start_match = re.match(r"__FENCE_START__(.*?)__", part)
+                    if start_match:
+                        lang = start_match.group(1)
+                        # Remove sentinel markers
+                        code_body = part.replace(start_match.group(0), "").replace("__FENCE_END__", "")
+                        # Generate fence with language hint
+                        fence_open = f"```{lang}" if lang else "```"
+                        code_content = f"{fence_open}{code_body}```"
+                        out_parts.append(code_content)
+                    else:
+                        # Fallback: fully remove prefix pattern __FENCE_START__{lang}__
+                        code_content = re.sub(r"__FENCE_START__[^\n]*?__", "```", part)
+                        code_content = code_content.replace("__FENCE_END__", "```")
+                        out_parts.append(code_content)
+                except Exception:
+                    # Fallback on error: fully remove prefix pattern
+                    code_content = re.sub(r"__FENCE_START__[^\n]*?__", "```", part)
+                    code_content = code_content.replace("__FENCE_END__", "```")
+                    out_parts.append(code_content)
             else:
                 # Non-code — apply whitespace collapsing
                 out_parts.append(_collapse_ws(part))
@@ -666,12 +1016,18 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     meta_lines = []
     # Use full canonical URL for Source field instead of domain only
     source_display = url or ""
-    # Always include three lines
+    # Always include core metadata fields
     meta_lines.append(f"Author: {meta.get('author') or 'N/A'}")
     meta_lines.append(f"Published: {meta.get('publish_date') or 'N/A'}")
+    meta_lines.append(f"Version: {meta.get('version') or 'N/A'}")
+    # Only include Last Updated if present
+    if meta.get('last_updated'):
+        meta_lines.append(f"Last Updated: {meta.get('last_updated')}")
     meta_lines.append(f"Source: {source_display or 'N/A'}")
 
-    body = _collapse_ws("\n".join(meta_lines) + "\n\n" + body)
+    # Collapse whitespace in metadata only, then prepend to body (preserving code fences)
+    meta_str = _collapse_ws("\n".join(meta_lines))
+    body = meta_str + "\n\n" + body
 
     # Title
     title = ""
