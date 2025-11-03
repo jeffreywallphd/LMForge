@@ -64,6 +64,19 @@
     <p class="text-muted">No documents selected.</p>
   {% endif %}
 </div>
+<h2>Available Qdrant Collections</h2>
+
+<select id="collectionSelect" class="form-select">
+  <option value="">-- Select a collection --</option>
+  {% for c in existing_collections %}
+    <option value="{{ c }}">{{ c }}</option>
+  {% endfor %}
+</select>
+
+<div id="chunksContainer" style="margin-top: 20px;">
+  <h3>Collection Chunks</h3>
+  <ul id="chunkList"></ul>
+</div>
 
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -88,6 +101,33 @@ document.addEventListener("DOMContentLoaded", function() {
     }
   });
 });
+
+document.getElementById("collectionSelect").addEventListener("change", function() {
+  const collection = this.value;
+  const chunkList = document.getElementById("chunkList");
+  chunkList.innerHTML = "";
+
+  if (!collection) return;
+
+  fetch(`/api/database_workflow/?collection_name=${collection}`)
+    .then(response => response.json())
+    .then(data => {
+      if (data.chunks && data.chunks.length > 0) {
+        data.chunks.forEach((chunk, idx) => {
+          const li = document.createElement("li");
+          li.textContent = `${idx + 1}. ${chunk.substring(0, 200)}...`;
+          chunkList.appendChild(li);
+        });
+      } else {
+        chunkList.innerHTML = "<li>No chunks found in this collection.</li>";
+      }
+    })
+    .catch(err => {
+      console.error("Error fetching chunks:", err);
+      chunkList.innerHTML = "<li>Error fetching chunks.</li>";
+    });
+});
+
 </script>
 
 {% endblock %}

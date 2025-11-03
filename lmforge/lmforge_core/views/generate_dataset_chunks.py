@@ -2,6 +2,7 @@ from django.shortcuts import render
 from ..models.scraped_data import ScrapedData
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
+from django.http import JsonResponse
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from huggingface_hub.utils import LocalTokenNotFoundError
@@ -29,8 +30,8 @@ logging.basicConfig(
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DEFAULT_HF_API_KEY = config("HF_API_KEY", default="")
 
-
 # ---------- TOKENIZER ----------
+_tokenizer = None
 def get_tokenizer():
     if not DEFAULT_HF_API_KEY:
         logging.warning("No Hugging Face token found.")
@@ -42,10 +43,10 @@ def get_tokenizer():
         os.environ["TRANSFORMERS_CACHE"] = "D:/huggingface_cache"
         os.environ["HUGGINGFACE_HUB_CACHE"] = "D:/huggingface_cache"
 
-        model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
-        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=True)
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
+        model_name = "meta-llama/Llama-3.2-1B-Instruct"  
+        _tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=True)
+        if _tokenizer.pad_token is None:
+            _tokenizer.pad_token = _tokenizer.eos_token
 
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
@@ -56,7 +57,7 @@ def get_tokenizer():
         )
 
         model.to(device)
-        return model, tokenizer, device
+        return model, _tokenizer, device
 
     except LocalTokenNotFoundError:
         logging.error("Hugging Face token missing in .env.")
@@ -68,10 +69,9 @@ def get_tokenizer():
 
 # ---------- TOKEN COUNT + CHUNKING ----------
 def count_tokens(text):
-    model, tokenizer, _ = get_tokenizer()
-    if not tokenizer:
+    if not _tokenizer:
         return len(text.split())
-    return len(tokenizer.encode(text))
+    return len(_tokenizer.encode(text))
 
 def split_text(text, max_tokens=1000):
     paragraphs = text.split("\n\n")
@@ -97,12 +97,14 @@ def get_qdrant_client():
 
 def get_existing_collections():
     client = get_qdrant_client()
-    return [c.name for c in client.get_collections().collections]
+    try:
+        return [c.name for c in client.get_collections().collections]
+    except Exception as e:
+        logging.error(f"Error fetching collections: {e}")
+        return []
 
 def ensure_collection_exists(client, collection_name, vector_size):
-    """Create the collection if it doesn't exist or validate its dimension."""
-    existing = [c.name for c in client.get_collections().collections]
-
+    existing = get_existing_collections()
     if collection_name not in existing:
         client.create_collection(
             collection_name=collection_name,
@@ -119,7 +121,7 @@ def ensure_collection_exists(client, collection_name, vector_size):
                 f"Existing={existing_dim}, Trying={vector_size}"
             )
 
-
+# ---------- STORE CHUNKS ----------
 def store_chunks_in_qdrant(chunks, collection_name):
     client = get_qdrant_client()
     embedder = SentenceTransformer("all-MiniLM-L6-v2")
@@ -148,16 +150,36 @@ def store_chunks_in_qdrant(chunks, collection_name):
     logging.info(f"✅ Stored {len(chunks)} chunks in '{collection_name}'.")
 
 
+# ---------- Fetch Chunks ----------
+def fetch_chunks_from_collection(collection_name, limit=20):
+    client = get_qdrant_client()
+    try:
+        result = client.scroll(collection_name=collection_name, limit=limit, with_payload=True)
+        points = result[0]
+        return [p.payload.get("text", "") for p in points]
+    except Exception as e:
+        logging.error(f"Error fetching chunks from {collection_name}: {e}")
+        return []
+
+
 # ---------- MAIN VIEW ----------
 def database_workflow(request):
-    """Handle chunk generation and storage in Qdrant."""
+    existing_collections = get_existing_collections()
+
+    # Handle AJAX chunk fetch
+    if request.method == "GET" and request.GET.get("collection_name"):
+        collection_name = request.GET.get("collection_name")
+        chunks = fetch_chunks_from_collection(collection_name)
+        return JsonResponse({"chunks": chunks})
+
+    # Handle chunk generation and storage
     if request.method == "POST":
         selected_document_ids = request.POST.getlist('selected_documents')
 
         if not selected_document_ids:
             return render(request, "database_chunks.html", {
                 "error": "You must select at least one document to proceed.",
-                "existing_collections": get_existing_collections(),
+                "existing_collections": existing_collections,
             })
 
         documents = ScrapedData.objects.filter(id__in=selected_document_ids)
