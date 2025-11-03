@@ -26,12 +26,16 @@ _JUNK_HINTS = [
     "bx--", "ibm-masthead", "ibm-footer",
     # navigation / header / menu / breadcrumbs
     "breadcrumb", "navigation", "nav-", "menu", "site-header", "site-footer",
+    "utility-nav", "primary-nav", "secondary-nav", "global-nav",
     # social / newsletter / cta patterns
     "share-", "social-share", "follow-us", "newsletter-", "signup-", "cta-", "call-to-action",
     # Newsletter/roundup promotional content patterns
     "newsletter", "roundup", "news-roundup", "weekly-", "daily-", "newsletter-digest", "news-digest", "email-briefing", "site-briefing",
     # common recommendation/comment vendors
     "outbrain", "taboola", "disqus", "livefyre", "comments-section",
+    # Mayo Clinic specific patterns
+    "products-services", "site-map", "appointments", "donate", "translation-links",
+    "skip-to-content", "back-to-top", "breadcrumbs", "utility-", "language-selector",
 ]
 
 
@@ -54,6 +58,8 @@ _CUTOFF_PHRASES = [
 # Boilerplate / noise phrases to filter out
 _NOISE_PHRASES = [
     "follow us on", "sign up for", "subscribe to", "advertisement", "cookie policy",
+    "does not endorse companies or products", "advertising revenue supports",
+    "send a message", "thank a researcher", "find a doctor", "explore careers",
 ]
 
 # Headings that should trigger cutting off remaining blocks when encountered in plain text
@@ -61,8 +67,8 @@ _CUTOFF_HEADINGS = [
     # Existing entries
     "related articles", "more resources", "about the author", "you might also like",
     "further reading", "references",
-    # Single-word promotional headings
-    "resources", "explore", "discover", "learn", "share", "subscribe", "follow", "connect",
+    # Single-word promotional headings (with smart CTA detection to avoid false positives)
+    "resources", "explore", "discover", "share", "subscribe", "follow", "connect",
     # Multi-word promotional headings
     "learn more", "explore more", "related content", "additional resources", "see also",
     "next steps", "recommended reading", "popular articles", "trending now",
@@ -71,11 +77,17 @@ _CUTOFF_HEADINGS = [
     "recommended for you", "editor's picks", "featured content", "latest updates",
     "stay informed", "join the conversation", "get in touch", "contact us",
     "about us", "our team",
+    # Medical site specific
+    "products & services", "advertising & sponsorship", "thank a researcher",
+    # Mayo Clinic product marketing
+    "the mayo clinic diet", "mayo clinic store", "mayo clinic marketplace",
 ]
 
 # Bad line prefixes to drop in plaintext (copyright, legal boilerplate)
 _BAD_LINE_PREFIXES = [
     "copyright", "©", "all rights reserved", "terms of service", "privacy policy",
+    "advertising and sponsorship", "mayo clinic does not endorse",
+    "- the mayo clinic",  # Catches "- The Mayo Clinic Diet" etc.
 ]
 
 
@@ -86,6 +98,58 @@ def _collapse_ws(text: str) -> str:
     s = s.strip()
     s = _NL_RE.sub("\n\n", s)
     return s
+
+
+def _merge_broken_sentences(text: str) -> str:
+    """Merge single linebreaks that break sentences mid-word or mid-phrase.
+    
+    Preserves paragraph breaks (double newlines) but joins sentences split across lines.
+    For example: 'The\ncapsule should' -> 'The capsule should'
+    """
+    if not text:
+        return ""
+    
+    # Split into blocks (separated by blank lines / paragraph breaks)
+    blocks = re.split(r'\n\s*\n', text)
+    fixed_blocks = []
+    
+    for block in blocks:
+        # Within each block, join lines that don't end with sentence terminators
+        # or list markers, and don't start with list markers
+        lines = block.split('\n')
+        if len(lines) <= 1:
+            fixed_blocks.append(block)
+            continue
+        
+        merged_lines = []
+        i = 0
+        while i < len(lines):
+            current = lines[i].rstrip()
+            
+            # Look ahead to see if next line should be merged
+            if i + 1 < len(lines):
+                next_line = lines[i + 1].lstrip()
+                
+                # Merge if:
+                # - Current line doesn't end with sentence terminator (. ! ? :)
+                # - Next line doesn't start with list marker (- or digit.)
+                # - Current line isn't a heading (heuristic: < 80 chars and no lowercase continuation)
+                ends_sentence = current.endswith(('.', '!', '?', ':'))
+                next_is_list = re.match(r'^[-•]\s', next_line) or re.match(r'^\d+\.\s', next_line)
+                current_is_heading = len(current) < 80 and current and not current[-1].islower()
+                
+                if not ends_sentence and not next_is_list and not current_is_heading and next_line:
+                    # Merge with space
+                    merged_lines.append(current + ' ' + next_line)
+                    i += 2  # Skip both lines
+                    continue
+            
+            merged_lines.append(current)
+            i += 1
+        
+        fixed_blocks.append('\n'.join(merged_lines))
+    
+    return '\n\n'.join(fixed_blocks)
 
 
 def _looks_junk(tag) -> bool:
@@ -274,8 +338,18 @@ def _is_trailing_empty_heading(heading_text: str, remaining_elements: list) -> b
     is_single_word = len(normalized.split()) == 1
     threshold = 150 if is_single_word else 100
     
+    # CTA/promotional paragraph starters that indicate non-content even if long
+    cta_starters = [
+        'discover', 'dive into', 'download', 'access our', 'get started', 'learn more',
+        'explore our', 'try now', 'sign up', 'subscribe', 'join us', 'get your',
+        'find out', 'see how', 'check out', 'watch our', 'read our', 'browse our',
+        'register for', 'enroll in', 'purchase', 'buy now', 'shop now', 'order now'
+    ]
+    
     # Look ahead at next 3-5 elements
     lookahead_count = min(5, len(remaining_elements))
+    substantive_count = 0
+    
     for i in range(lookahead_count):
         el = remaining_elements[i]
         
@@ -289,9 +363,20 @@ def _is_trailing_empty_heading(heading_text: str, remaining_elements: list) -> b
             # Ignore very short content
             if len(text) < 20:
                 continue
+            
+            text_lower = text.lower()
+            
+            # Check if it's a CTA/promotional paragraph
+            is_cta = any(text_lower.startswith(starter) for starter in cta_starters)
+            if is_cta:
+                continue  # Skip CTA paragraphs, don't count as substantive
+            
             # Found substantive content
             if len(text) > threshold:
-                return False
+                substantive_count += 1
+                # Need at least one truly substantive paragraph
+                if substantive_count >= 1:
+                    return False
     
     # No substantive content found in lookahead
     return True
@@ -371,9 +456,10 @@ def _extract_metadata(soup: BeautifulSoup, url: str = None) -> dict:
         if not last_updated_el:
             # Search for elements containing "last updated" or "last modified" text
             import re as _re
-            for tag in soup.find_all(['footer', 'div', 'span', 'p', 'time']):
+            for tag in soup.find_all(['footer', 'div', 'span', 'p', 'time', 'small']):
                 text = tag.get_text(" ", strip=True)
-                if _re.search(r'\b(?:last\s+(?:updated|modified)|updated\s+on|modified\s+on)\b', text, _re.IGNORECASE):
+                # Match patterns like "Portions of this document last updated: October 01, 2025"
+                if _re.search(r'\b(?:last\s+(?:updated|modified)|updated\s+on|modified\s+on|portions.*last\s+updated)\b', text, _re.IGNORECASE):
                     last_updated_el = tag
                     break
         
@@ -384,10 +470,16 @@ def _extract_metadata(soup: BeautifulSoup, url: str = None) -> dict:
             else:
                 # Extract text and clean it
                 text = last_updated_el.get_text(" ", strip=True)
-                # Remove common prefixes
+                # Remove common prefixes and extract date
                 import re as _re
-                text = _re.sub(r'^(?:last\s+(?:updated|modified)|updated\s+on|modified\s+on)[\s:]*', '', text, flags=_re.IGNORECASE)
-                last_updated = text.strip() if text else None
+                # Try to extract date patterns like "October 01, 2025" or "2025-10-01"
+                date_match = _re.search(r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}|\d{4}-\d{2}-\d{2}', text, _re.IGNORECASE)
+                if date_match:
+                    last_updated = date_match.group(0).strip()
+                else:
+                    # Fallback: remove prefixes
+                    text = _re.sub(r'^(?:last\s+(?:updated|modified)|updated\s+on|modified\s+on|portions.*last\s+updated)[\s:]*', '', text, flags=_re.IGNORECASE)
+                    last_updated = text.strip() if text and len(text) < 100 else None
 
     # meta tags
     meta_author = soup.find("meta", attrs={"name": "author"}) or soup.find("meta", attrs={"property": "article:author"})
@@ -418,44 +510,85 @@ def _extract_metadata(soup: BeautifulSoup, url: str = None) -> dict:
             except Exception:
                 pass
 
+    # Track medical content provider separately from author
+    content_provider = None
+    
     # byline patterns near H1
     if not author:
-        byline = soup.find(class_=lambda v: v and "byline" in v.lower()) or soup.find(class_=lambda v: v and "author" in v.lower())
-        if byline:
-            cand = byline.get_text(" ", strip=True)
-            if cand:
-                author = cand
-                # Remove the byline container if it appears to be a dedicated byline/author element
-                try:
-                    clsid = (" ".join(byline.get("class", []) or []) + " " + (byline.get("id", "") or "")).lower()
-                    short_text = len(cand) <= 120
-                    looks_byline = any(k in clsid for k in ["byline", "author", "article__byline"]) or cand.lower().startswith("by ")
-                    if looks_byline and short_text:
-                        byline.decompose()
-                except Exception:
-                    pass
-        else:
-            # scan a small portion of document for "By [Name]"
-            text_head = " ".join([p.get_text(" ", strip=True) for p in soup.find_all(limit=20)])
-            import re as _re
-            m = _re.search(r"\b[Bb]y\s+([A-Z][\w\-]+(?:\s+[A-Z][\w\-]+){0,3})", text_head)
-            if m:
-                author = m.group(1)
-                # Attempt to remove the containing element if it primarily consists of the byline text
-                try:
-                    candidates = soup.find_all(["p", "span", "div"], limit=50)
-                    for el in candidates:
-                        txt = (el.get_text(" ", strip=True) or "")
-                        low = txt.lower()
-                        if low.startswith("by ") and len(txt) <= (len(m.group(0)) + 20):
-                            # Ensure it's not a long paragraph with additional content
-                            if len(txt) <= 140:
-                                el.decompose()
-                                break
-                except Exception:
-                    pass
+        # Check for medical/drug info attribution patterns first (e.g., "Drug information provided by: Merative")
+        import re as _re
+        for tag in soup.find_all(['p', 'div', 'span', 'small'], limit=100):
+            text = tag.get_text(" ", strip=True)
+            # Match patterns like "Drug information provided by: Merative, Micromedex®"
+            # Stop at "Portions", "Copyright", or sentence endings
+            author_match = _re.search(r'(?:drug\s+)?information\s+(?:provided|compiled)\s+by[\s:]+([^.]+?)(?:\s+(?:Portions|Copyright|All rights)|[.!?]|$)', text, _re.IGNORECASE)
+            if author_match:
+                # Store as content_provider, not author
+                content_provider = author_match.group(1).strip()
+                # Clean up common suffixes but keep ®
+                content_provider = _re.sub(r'[,™©]+\s*$', '', content_provider).strip()
+                break
+        
+        # Standard byline detection if medical pattern not found
+        if not author:
+            # Use filter function to avoid BeautifulSoup lambda selector bug
+            def _is_byline_tag(tag):
+                cls = tag.get('class', [])
+                if cls:
+                    cls_str = ' '.join(cls).lower() if isinstance(cls, list) else str(cls).lower()
+                    return 'byline' in cls_str or 'author' in cls_str
+                return False
+            
+            byline = soup.find(_is_byline_tag)
+            if byline:
+                cand = byline.get_text(" ", strip=True)
+                if cand:
+                    author = cand
+                    # Remove the byline container if it appears to be a dedicated byline/author element
+                    try:
+                        clsid = (" ".join(byline.get("class", []) or []) + " " + (byline.get("id", "") or "")).lower()
+                        short_text = len(cand) <= 120
+                        looks_byline = any(k in clsid for k in ["byline", "author", "article__byline"]) or cand.lower().startswith("by ")
+                        if looks_byline and short_text:
+                            byline.decompose()
+                    except Exception:
+                        pass
+            else:
+                # scan a small portion of document for "By [Name]"
+                text_head = " ".join([p.get_text(" ", strip=True) for p in soup.find_all(limit=20)])
+                m = _re.search(r"\b[Bb]y\s+([A-Z][\w\-]+(?:\s+[A-Z][\w\-]+){0,3})", text_head)
+                if m:
+                    author = m.group(1)
+                    # Attempt to remove the containing element if it primarily consists of the byline text
+                    try:
+                        candidates = soup.find_all(["p", "span", "div"], limit=50)
+                        for el in candidates:
+                            txt = (el.get_text(" ", strip=True) or "")
+                            low = txt.lower()
+                            if low.startswith("by ") and len(txt) <= (len(m.group(0)) + 20):
+                                # Ensure it's not a long paragraph with additional content
+                                if len(txt) <= 140:
+                                    el.decompose()
+                                    break
+                    except Exception:
+                        pass
 
-    return {"author": author, "publish_date": publish_date, "publisher": publisher, "version": version, "last_updated": last_updated}
+    # Clean up empty strings to None for cleaner output
+    author = author.strip() if author else None
+    publish_date = publish_date.strip() if publish_date else None
+    publisher = publisher.strip() if publisher else None
+    version = version.strip() if version else None
+    last_updated = last_updated.strip() if last_updated else None
+    content_provider = content_provider.strip() if content_provider else None
+
+    return {
+        "author": author, 
+        "publish_date": publish_date, 
+        "publisher": publisher, 
+        "version": version, 
+        "last_updated": last_updated,
+        "content_provider": content_provider
+    }
 
 
 def _is_code_heavy_page(soup: BeautifulSoup, url: str) -> bool:
@@ -643,20 +776,28 @@ def _gather_content_blocks(soup: BeautifulSoup, main_container) -> list:
         main_container = soup.body or soup
 
     blocks = []
-    # If main contains multiple section/div children that look substantive, include them
-    children = [c for c in main_container.find_all(recursive=False)]
-    if children:
-        for ch in children:
-            if _looks_junk(ch):
-                continue
-            if _is_end_of_article(ch):
-                break
-            if _is_mid_article_cta(ch):
-                continue
-            if _text_len(ch) > 200 or ch.find(["h2", "h3"]) or ch.find(["ul", "ol"]):
-                blocks.append(ch)
-        if blocks:
-            return blocks
+    
+    # For semantic HTML5 containers (article, main, [role=main], id=main), always use the container directly
+    # rather than trying to gather child blocks, as child filtering is too restrictive
+    is_semantic = (main_container.name in ['article', 'main'] or 
+                   main_container.get('role') == 'main' or
+                   main_container.get('id') in ['main', 'content'])
+    
+    if not is_semantic:
+        # If main contains multiple section/div children that look substantive, include them
+        children = [c for c in main_container.find_all(recursive=False)]
+        if children:
+            for ch in children:
+                if _looks_junk(ch):
+                    continue
+                if _is_end_of_article(ch):
+                    break
+                if _is_mid_article_cta(ch):
+                    continue
+                if _text_len(ch) > 200 or ch.find(["h2", "h3"]) or ch.find(["ul", "ol"]):
+                    blocks.append(ch)
+            if blocks:
+                return blocks
 
     # Otherwise, include the main container and its meaningful sibling containers
     base = main_container
@@ -753,6 +894,7 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
 
     Returns: { 'title': str, 'url': str, 'site': str, 'body': str }
     """
+    # DEBUG MARKER - CODE UPDATED 2025-11-02
     soup = BeautifulSoup(html_bytes, "html.parser")
 
     # Phase A: metadata extraction early (before DOM changes)
@@ -769,6 +911,56 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     for c in soup.find_all(string=lambda text: isinstance(text, Comment)):
         c.extract()
 
+    # Early removal of common navigation/boilerplate patterns
+    # This helps prevent "Skip to content" and menu text from polluting metadata
+    # Remove by semantic HTML roles (universal across all sites)
+    semantic_boilerplate_roles = ['navigation', 'banner', 'complementary', 'contentinfo', 'search', 'form']
+    for role in semantic_boilerplate_roles:
+        for tag in list(soup.find_all(attrs={'role': role})):
+            try:
+                tag.decompose()
+            except Exception:
+                pass
+    
+    # Remove <aside> tags (typically sidebars)
+    for aside in list(soup.find_all('aside')):
+        try:
+            aside.decompose()
+        except Exception:
+            pass
+    
+    # Additional class/id-based removal for common patterns (using filter functions, not dict selectors)
+    nav_class_patterns = ["skip-", "utility-nav", "primary-nav", "secondary-nav", 
+                          "global-nav", "site-nav", "main-nav", "breadcrumb"]
+    nav_id_patterns = ["skip-", "nav", "menu", "breadcrumb"]
+    nav_aria_patterns = ["navigation", "menu", "breadcrumb"]
+    
+    def _is_nav_element(tag):
+        # Check class attribute
+        cls = tag.get('class', [])
+        if cls:
+            cls_str = ' '.join(cls).lower() if isinstance(cls, list) else str(cls).lower()
+            if any(pat in cls_str for pat in nav_class_patterns):
+                return True
+        
+        # Check id attribute
+        tag_id = tag.get('id', '')
+        if tag_id and any(pat in tag_id.lower() for pat in nav_id_patterns):
+            return True
+        
+        # Check aria-label attribute
+        aria_label = tag.get('aria-label', '')
+        if aria_label and any(pat in aria_label.lower() for pat in nav_aria_patterns):
+            return True
+        
+        return False
+    
+    for tag in list(soup.find_all(_is_nav_element)):
+        try:
+            tag.decompose()
+        except Exception:
+            pass
+
     # Remove clearly junk containers site-wide (guard against removing large substantive sections)
     for tag in list(soup.find_all(True)):
         if _looks_junk(tag):
@@ -781,8 +973,21 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
             except Exception:
                 pass
 
-    # Phase B: identify primary container(s)
-    main = _densest_block(soup)
+    # Phase B: identify primary container(s) using semantic-first approach
+    # This universal strategy works across all sites without needing site-specific patterns
+    
+    # Strategy 1: Prefer semantic HTML5 elements (modern sites)
+    main = (soup.find('main') or 
+            soup.find(attrs={'role': 'main'}) or 
+            soup.find('article') or
+            soup.find(id='main') or
+            soup.find(id='content') or
+            soup.find(class_='main-content') or
+            soup.find(class_='content'))
+    
+    # Strategy 2: If no semantic tags, fall back to content density scoring
+    if not main:
+        main = _densest_block(soup)
 
     # Handle header/footer carefully: unwrap inside main, decompose outside
     for hf in list(soup.find_all(["header", "footer"])):
@@ -1011,19 +1216,41 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
         return "".join(out_parts)
 
     body = _collapse_preserving_code(joined)
+    
+    # Merge broken sentences (single linebreaks mid-sentence)
+    body = _merge_broken_sentences(body)
 
-    # Phase D: prepend metadata (always include all fields with N/A fallback)
+    # Phase D: prepend metadata
     meta_lines = []
-    # Use full canonical URL for Source field instead of domain only
     source_display = url or ""
-    # Always include core metadata fields
-    meta_lines.append(f"Author: {meta.get('author') or 'N/A'}")
-    meta_lines.append(f"Published: {meta.get('publish_date') or 'N/A'}")
-    meta_lines.append(f"Version: {meta.get('version') or 'N/A'}")
-    # Only include Last Updated if present
-    if meta.get('last_updated'):
-        meta_lines.append(f"Last Updated: {meta.get('last_updated')}")
-    meta_lines.append(f"Source: {source_display or 'N/A'}")
+    
+    # Show selected metadata fields: Author, Publisher, Last Updated (with fallback to publish_date), Version, Source
+    # Version shows null instead of N/A when missing
+    if meta.get('author'):
+        meta_lines.append(f"Author: {meta.get('author')}")
+    else:
+        meta_lines.append("Author: N/A")
+    
+    if meta.get('publisher'):
+        meta_lines.append(f"Publisher: {meta.get('publisher')}")
+    else:
+        meta_lines.append("Publisher: N/A")
+    
+    # Last Updated - fallback to publish_date if last_updated not available
+    last_updated_value = meta.get('last_updated') or meta.get('publish_date')
+    if last_updated_value:
+        meta_lines.append(f"Last Updated: {last_updated_value}")
+    else:
+        meta_lines.append("Last Updated: N/A")
+    
+    # Version - only show if a value exists
+    version_value = meta.get('version')
+    if version_value:
+        meta_lines.append(f"Version: {version_value}")
+    
+    # Always show source
+    if source_display:
+        meta_lines.append(f"Source: {source_display}")
 
     # Collapse whitespace in metadata only, then prepend to body (preserving code fences)
     meta_str = _collapse_ws("\n".join(meta_lines))
@@ -1056,8 +1283,11 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     result = {"title": title, "url": url, "site": site, "body": body}
     result.update({
         "author": meta.get("author"),
+        "content_provider": meta.get("content_provider"),
         "publish_date": meta.get("publish_date"),
         "publisher": publisher_value,
+        "version": meta.get("version"),
+        "last_updated": meta.get("last_updated"),
     })
 
     return result
