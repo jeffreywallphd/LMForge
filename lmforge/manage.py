@@ -3,6 +3,7 @@
 import os
 import sys
 from pathlib import Path
+from decouple import config
 
 def create_env_file():
     # Create a .env file from .env.example if it doesn't exist
@@ -41,9 +42,9 @@ def main():
             "forget to activate a virtual environment?"
         ) from exc
     
-    # Prevents Django's auto-reloader from running if `runserver` is used
-    #if "runserver" in sys.argv and "--noreload" not in sys.argv:
-    #    sys.argv.append("--noreload")
+    # Prevents Django's auto-reloader from running if `runserver` is used and AUTO_RELOAD is set to False
+    if "runserver" in sys.argv and "--noreload" not in sys.argv and str(config('AUTO_RELOAD', default='False')).upper()=='FALSE':
+        sys.argv.append("--noreload")
 
     execute_from_command_line(sys.argv)
 
