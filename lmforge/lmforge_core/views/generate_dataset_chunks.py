@@ -102,6 +102,21 @@ def get_existing_collections():
     except Exception as e:
         logging.error(f"Error fetching collections: {e}")
         return []
+    
+def get_collection_vector_size(client, collection_name):
+    try:
+        info = client.get_collection(collection_name)
+        # Qdrant API 1.7+ stores dimension in vectors_config
+        if hasattr(info, "config") and hasattr(info.config, "params"):
+            return info.config.params.size
+        elif hasattr(info, "vectors_config"):
+            if isinstance(info.vectors_config, dict):
+                # Single vector config
+                return list(info.vectors_config.values())[0].size
+            return info.vectors_config.size
+    except Exception:
+        pass
+    return None
 
 def ensure_collection_exists(client, collection_name, vector_size):
     existing = get_existing_collections()
@@ -120,6 +135,15 @@ def ensure_collection_exists(client, collection_name, vector_size):
                 f"⚠ Dimension mismatch for '{collection_name}'. "
                 f"Existing={existing_dim}, Trying={vector_size}"
             )
+            # Recreate the collection with correct dimension
+            client.delete_collection(collection_name)
+            client.create_collection(
+                collection_name=collection_name,
+                vectors_config=qmodels.VectorParams(size=vector_size, distance=qmodels.Distance.COSINE)
+            )
+            logging.info(f"✅ Recreated collection '{collection_name}' with dim={vector_size}")
+
+
 
 # ---------- STORE CHUNKS ----------
 def store_chunks_in_qdrant(chunks, collection_name):
@@ -151,16 +175,31 @@ def store_chunks_in_qdrant(chunks, collection_name):
 
 
 # ---------- Fetch Chunks ----------
-def fetch_chunks_from_collection(collection_name, limit=20):
+def fetch_chunks_from_collection(collection_name, batch_size=100):
     client = get_qdrant_client()
+    all_chunks = []
+    offset = None
+
     try:
-        result = client.scroll(collection_name=collection_name, limit=limit, with_payload=True)
-        points = result[0]
-        return [p.payload.get("text", "") for p in points]
+        while True:
+            result, offset = client.scroll(
+                collection_name=collection_name,
+                limit=batch_size,
+                with_payload=True,
+                offset=offset
+            )
+            if not result:
+                break
+            all_chunks.extend([p.payload.get("text", "") for p in result])
+            if offset is None:
+                break
+
+        logging.info(f"✅ Fetched {len(all_chunks)} chunks from '{collection_name}'.")
+        return all_chunks
+
     except Exception as e:
         logging.error(f"Error fetching chunks from {collection_name}: {e}")
         return []
-
 
 # ---------- MAIN VIEW ----------
 def database_workflow(request):
