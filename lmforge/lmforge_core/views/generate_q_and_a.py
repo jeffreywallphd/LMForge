@@ -27,6 +27,8 @@ import logging
 from huggingface_hub import login
 import transformers
 import re
+from huggingface_hub.utils import LocalTokenNotFoundError
+
 # Set up logging
 # Set log file name (in current directory)
 log_file = "application.log"
@@ -41,46 +43,55 @@ logging.basicConfig(
     ]
 )
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 DEFAULT_HF_API_KEY = config("HUGGINGFACE_TOKEN", default="")
 # setting huggingface token
-# setting huggingface token
-login(token=DEFAULT_HF_API_KEY)
 
-os.environ["HF_HOME"] = "D:/huggingface_cache" 
-os.environ["TRANSFORMERS_CACHE"] = "D:/huggingface_cache"
-os.environ["HUGGINGFACE_HUB_CACHE"] = "D:/huggingface_cache"
-logging.info(f"Setting up Hugging Face environment variables...")
+def get_model_and_tokenizer():
+    if not DEFAULT_HF_API_KEY:
+        logging.warning("No Hugging Face token found. Skipping login and model loading.")
+        return None, None, device
 
-logging.info(f"HF_HOME: {os.getenv('HF_HOME')}")
-logging.info(f"TRANSFORMERS_CACHE: {os.getenv('TRANSFORMERS_CACHE')}")
-logging.info(f"HUGGINGFACE_HUB_CACHE: {os.getenv('HUGGINGFACE_HUB_CACHE')}")
+    try:
+        login(token=DEFAULT_HF_API_KEY)
 
-transformers.utils.hub.TRANSFORMERS_CACHE = "D:/huggingface_cache"
+        os.environ["HF_HOME"] = "D:/huggingface_cache" 
+        os.environ["TRANSFORMERS_CACHE"] = "D:/huggingface_cache"
+        os.environ["HUGGINGFACE_HUB_CACHE"] = "D:/huggingface_cache"
+        logging.info("Hugging Face environment variables set.")
 
+        model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
 
-# model_name = "meta-llama/Meta-Llama-3-8B"
-model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
+        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=True)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token  
 
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch.float16,
+            device_map="cuda",
+            low_cpu_mem_usage=True,
+            trust_remote_code=True
+        )
 
-# Load the tokenizer and model
-tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=True)
-if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token  # Set pad token to eos token if not set
+        model.to(device)
+        return model, tokenizer, device
 
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    torch_dtype=torch.float16,
-    device_map="cuda",
-    low_cpu_mem_usage=True,
-    trust_remote_code=True
-)
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model.to(device)
+    except LocalTokenNotFoundError:
+        logging.error("Hugging Face token missing. Please configure HUGGINGFACE_TOKEN in .env.")
+        return None, None, device
+    except Exception as e:
+        logging.error(f"Unexpected error while loading model: {e}")
+        return None, None, device
 
 # Tokenizer function to count tokens in a text
 def count_tokens(text):
+    model, tokenizer, _ = get_model_and_tokenizer()
+    if not tokenizer:
+        logging.warning("No tokenizer available. Returning approximate token count.")
+        return len(text.split())  # fallback: rough word count
     return len(tokenizer.encode(text))
 
 
@@ -107,7 +118,14 @@ def split_text(text, max_tokens=1000):
     return chunks
 
 def llama_chat(prompt: str, max_tokens: int = 25): 
+    model, tokenizer, _ = get_model_and_tokenizer()
+    if not model or not tokenizer:
+        logging.warning("No Hugging Face model loaded. Returning empty response.")
+        return "" 
+    
     try:
+        tokenizer, model = get_model_and_tokenizer()
+
         inputs = tokenizer(prompt, return_tensors="pt").to(device)
         with torch.no_grad():
             output_tokens = model.generate(
