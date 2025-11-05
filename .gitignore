@@ -1,0 +1,72 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+/.idea
+
+# production
+/build
+/public
+/dist
+/.webpack
+
+# misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env
+.env.production
+.env.development
+*.env
+.env.*
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE files
+.ipynb_checkpoints
+.vscode
+
+
+# Virtual environment
+venv/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Django specific files
+*.log
+*.pot
+*.pyc
+
+# Database
+*.sqlite3
+
+# Static and media files
+/static/
+/media/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# To save data locally
+local_data/
+
+# Trained Models
+trained_models/
+
+# results
+results/
+
+# wandb
+wandb/
