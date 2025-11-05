@@ -23,3 +23,11 @@ class ScrapedDataMeta(models.Model):
     
     def __str__(self):
         return f'Metadata for {self.url} ({self.file_type})'
+    
+
+
+from pgvector.django import VectorField
+
+class PDFDocument(models.Model):
+    text = models.TextField()
+    embedding = VectorField(dimensions=768)

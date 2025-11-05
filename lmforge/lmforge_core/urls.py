@@ -9,6 +9,7 @@ from .views.scrape import ScrapeDataView, UploadPDFView, scrape_view, SaveManual
 from .views import SessionCreateView, ConversationListView, ConversationCreateView, SessionListView, ChatbotGenerateResponseView
 from .views.generate_q_and_a import generate_q_and_a, document_detail, download_json, upload_parquet_to_huggingface, download_csv, get_huggingface_datasets
 from .views.dataset_workflow import dataset_workflow_view, dataset_workflow_document_processor
+from .views.rag_chat import rag_chat_view, process_pdfs, chat_message
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -23,6 +24,9 @@ urlpatterns = [
     path("model_statistics/", ModelStatisticsView.as_view(), name="model-statistics"),
     path('chatbot_view/', chatbot_view, name='chatbot-view'),  
     path('home_view/', home_view, name='home-view'),  
+    path('rag_chat/', rag_chat_view, name='rag-chat-view'),
+    path('rag_chat/process/', process_pdfs, name='rag-chat-process'),
+    path('rag_chat/chat/', chat_message, name='rag-chat-message'),
     path('scrape_view/', scrape_view, name='scrape-view'),
     path("train_model/", train_model_view, name="train-view"),
     path("stream-training/",stream_training_output, name="stream-training"),

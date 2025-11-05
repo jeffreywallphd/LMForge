@@ -37,6 +37,9 @@ services:
     environment:
       - DATABASE_HOST=db-default
       - PYTHONUNBUFFERED=1
+    # Note: For memory limits, set in Docker Desktop settings or use:
+    # docker run --memory=16g ... (if running manually)
+    # Or use a smaller model by setting RAG_MODEL_NAME in .env
 
     develop:
       watch:

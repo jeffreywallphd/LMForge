@@ -1,0 +1,518 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}RAG Chat{% endblock %}
+
+{% block content %}
+<style>
+.chat-message {
+    padding: 1.2rem;
+    border-radius: 12px;
+    margin-bottom: 1.2rem;
+    display: flex;
+    align-items: flex-start;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transition: transform 0.2s ease;
+}
+.chat-message:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.chat-message.user {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    margin-left: 2rem;
+}
+.chat-message.bot {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    margin-right: 2rem;
+}
+.chat-message .avatar {
+    width: 15%;
+    min-width: 60px;
+    max-width: 80px;
+}
+.chat-message .avatar img {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid rgba(255,255,255,0.3);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.chat-message .message {
+    width: 85%;
+    padding: 0 1.5rem;
+    color: #ffffff;
+    font-size: 1.05rem;
+    line-height: 1.6;
+    word-wrap: break-word;
+}
+.chat-message.bot .message {
+    font-weight: 500;
+}
+.chat-message.user .message {
+    font-weight: 400;
+}
+.status-indicator {
+    padding: 0.5rem 1rem;
+    border-radius: 5px;
+    margin-bottom: 1rem;
+    display: inline-block;
+}
+.status-indicator.success {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+.status-indicator.info {
+    background-color: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+}
+#chat-container {
+    max-width: 900px;
+    margin: 0 auto;
+}
+#chat-history {
+    max-height: 500px;
+    overflow-y: auto;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background-color: #f9f9f9;
+}
+#question-input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 1rem;
+}
+#question-input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1rem;
+    margin-top: 0.5rem;
+}
+.btn-primary:hover {
+    opacity: 0.9;
+}
+.btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+.sidebar-section {
+    background-color: #f5f5f5;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background-color: #e0e0e0;
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 0.5rem 0;
+}
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    transition: width 0.3s ease;
+}
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <!-- Main Chat Area -->
+        <div class="col-md-8">
+            <h1>Chat with Multiple PDFs</h1>
+            
+            <div id="status-message"></div>
+            
+            <div id="chat-container">
+                <div id="chat-history"></div>
+                
+                <div class="input-group">
+                    <input 
+                        type="text" 
+                        id="question-input" 
+                        placeholder="Ask a question about your documents..."
+                        onkeydown="handleEnter(event)"
+                    >
+                    <button class="btn-primary" onclick="sendQuestion()" id="send-btn">Ask</button>
+                </div>
+                
+                <div id="check-answer-container" style="display: none; margin-top: 1rem;">
+                    <button class="btn-primary" onclick="checkAnswer()" id="check-btn" style="background: #28a745;">Check Answer</button>
+                    <span id="check-status" style="margin-left: 1rem; color: #666;"></span>
+                </div>
+                
+                <button class="btn-primary" onclick="clearChat()" style="margin-top: 1rem; background: #dc3545;">Clear Chat</button>
+            </div>
+        </div>
+        
+        <!-- Sidebar -->
+        <div class="col-md-4">
+            <div class="sidebar-section">
+                <h3>Your documents</h3>
+                <input 
+                    type="file" 
+                    id="pdf-upload" 
+                    accept=".pdf" 
+                    multiple 
+                    onchange="handleFileSelect(event)"
+                >
+                <div id="file-list" style="margin-top: 1rem; font-size: 0.9rem;"></div>
+                
+                <button 
+                    class="btn-primary" 
+                    onclick="processPDFs()" 
+                    id="process-btn"
+                    style="margin-top: 1rem; width: 100%;"
+                >
+                    Process
+                </button>
+                
+                <div id="progress-container" style="display: none; margin-top: 1rem;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
+                    </div>
+                    <div id="progress-text" style="font-size: 0.9rem; color: #666;"></div>
+                </div>
+            </div>
+            
+            <div class="sidebar-section">
+                <h4>System Status</h4>
+                <div id="gpu-status">
+                    {% if gpu_status.device == "cuda" %}
+                        <div class="status-indicator success">
+                            GPU Enabled: {{ gpu_status.gpu_name }} ({{ gpu_status.gpu_memory|floatformat:1 }} GB)
+                        </div>
+                    {% else %}
+                        <div class="status-indicator info">
+                            Running on CPU (No GPU detected or CUDA not available)
+                        </div>
+                    {% endif %}
+                </div>
+                
+                <div style="margin-top: 1rem;">
+                    <button class="btn-primary" onclick="showConnectionInfo()" style="font-size: 0.9rem; padding: 0.5rem 1rem;">
+                        Connection Info
+                    </button>
+                    <div id="connection-info" style="display: none; margin-top: 0.5rem; font-size: 0.85rem; font-family: monospace; background: #f0f0f0; padding: 0.5rem; border-radius: 4px;">
+                        Host: {{ db_info.host }}<br>
+                        Port: {{ db_info.port }}<br>
+                        Database: {{ db_info.database }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let chatHistory = [];
+
+function handleEnter(event) {
+    if (event.key === 'Enter') {
+        sendQuestion();
+    }
+}
+
+function handleFileSelect(event) {
+    const files = event.target.files;
+    const fileList = document.getElementById('file-list');
+    
+    if (files.length > 0) {
+        fileList.innerHTML = `<strong>${files.length} file(s) selected:</strong><ul style="margin-top: 0.5rem; padding-left: 1.5rem;">`;
+        for (let file of files) {
+            fileList.innerHTML += `<li>${file.name}</li>`;
+        }
+        fileList.innerHTML += '</ul>';
+    } else {
+        fileList.innerHTML = '';
+    }
+}
+
+async function processPDFs() {
+    const fileInput = document.getElementById('pdf-upload');
+    const files = fileInput.files;
+    
+    if (files.length === 0) {
+        showStatus('Please upload at least one PDF file.', 'error');
+        return;
+    }
+    
+    const formData = new FormData();
+    for (let file of files) {
+        formData.append('files', file);
+    }
+    
+    const processBtn = document.getElementById('process-btn');
+    const progressContainer = document.getElementById('progress-container');
+    const progressFill = document.getElementById('progress-fill');
+    const progressText = document.getElementById('progress-text');
+    
+    processBtn.disabled = true;
+    progressContainer.style.display = 'block';
+    
+    // Simulate progress
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+        progress += 10;
+        if (progress <= 90) {
+            progressFill.style.width = progress + '%';
+            if (progress <= 25) {
+                progressText.textContent = 'Extracting text...';
+            } else if (progress <= 50) {
+                progressText.textContent = 'Splitting text...';
+            } else if (progress <= 75) {
+                progressText.textContent = 'Creating embeddings...';
+            } else {
+                progressText.textContent = 'Setting up conversation...';
+            }
+        }
+    }, 200);
+    
+    try {
+        const response = await fetch('/api/rag_chat/process/', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+        
+        clearInterval(progressInterval);
+        progressFill.style.width = '100%';
+        progressText.textContent = 'Complete!';
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showStatus(data.message, 'success');
+            chatHistory = []; // Clear chat history when new documents are processed
+            displayChatHistory();
+        } else {
+            showStatus(data.error || 'Processing failed', 'error');
+        }
+    } catch (error) {
+        clearInterval(progressInterval);
+        showStatus('Error: ' + error.message, 'error');
+    } finally {
+        processBtn.disabled = false;
+        setTimeout(() => {
+            progressContainer.style.display = 'none';
+            progressFill.style.width = '0%';
+        }, 2000);
+    }
+}
+
+// Store pending question
+let pendingQuestion = null;
+let pendingRequest = null;
+
+async function sendQuestion() {
+    const questionInput = document.getElementById('question-input');
+    const question = questionInput.value.trim();
+    
+    if (!question) {
+        return;
+    }
+    
+    // Add user question to chat
+    addMessageToChat('user', question);
+    questionInput.value = '';
+    
+    const sendBtn = document.getElementById('send-btn');
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Processing...';
+    
+    // Show check answer button
+    const checkContainer = document.getElementById('check-answer-container');
+    const checkBtn = document.getElementById('check-btn');
+    const checkStatus = document.getElementById('check-status');
+    checkContainer.style.display = 'block';
+    checkBtn.disabled = false;
+    checkBtn.textContent = 'Check Answer';
+    checkStatus.textContent = 'Question submitted. Click "Check Answer" to see the response.';
+    
+    // Store pending question
+    pendingQuestion = question;
+    
+    // Start the request in background
+    pendingRequest = fetch('/api/rag_chat/chat/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({ question: question })
+    });
+    
+    // Re-enable send button
+    sendBtn.disabled = false;
+    sendBtn.textContent = 'Ask';
+}
+
+async function checkAnswer() {
+    if (!pendingRequest) {
+        document.getElementById('check-status').textContent = 'No pending question. Please ask a question first.';
+        return;
+    }
+    
+    const checkBtn = document.getElementById('check-btn');
+    const checkStatus = document.getElementById('check-status');
+    checkBtn.disabled = true;
+    checkBtn.textContent = 'Checking...';
+    checkStatus.textContent = 'Checking for response...';
+    
+    try {
+        const response = await pendingRequest;
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(errorData.error || `HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Remove any existing "Thinking..." messages
+        chatHistory = chatHistory.filter(msg => msg.content !== 'Thinking...');
+        
+        // Add the response
+        if (data.response) {
+            addMessageToChat('assistant', data.response);
+            checkStatus.textContent = 'Response received!';
+            checkStatus.style.color = '#28a745';
+        } else {
+            addMessageToChat('assistant', 'No response generated. Please try again.');
+            checkStatus.textContent = 'No response received.';
+            checkStatus.style.color = '#dc3545';
+        }
+        
+        // Clear pending request
+        pendingRequest = null;
+        pendingQuestion = null;
+        
+        // Hide check button after a moment
+        setTimeout(() => {
+            document.getElementById('check-answer-container').style.display = 'none';
+            checkStatus.textContent = '';
+            checkStatus.style.color = '#666';
+        }, 3000);
+        
+    } catch (error) {
+        checkStatus.textContent = 'Error: ' + (error.message || 'Unknown error');
+        checkStatus.style.color = '#dc3545';
+        addMessageToChat('assistant', 'Sorry, I encountered an error: ' + (error.message || 'Unknown error'));
+        console.error('Check answer error:', error);
+    } finally {
+        checkBtn.disabled = false;
+        checkBtn.textContent = 'Check Answer';
+    }
+}
+
+function addMessageToChat(role, content) {
+    chatHistory.push({ role: role, content: content });
+    displayChatHistory();
+}
+
+function displayChatHistory() {
+    const chatHistoryDiv = document.getElementById('chat-history');
+    chatHistoryDiv.innerHTML = '';
+    
+    chatHistory.forEach(msg => {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `chat-message ${msg.role}`;
+        
+        if (msg.role === 'user') {
+            messageDiv.innerHTML = `
+                <div class="avatar">
+                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=User&backgroundColor=c0aede" alt="You">
+                </div>
+                <div class="message">
+                    <strong style="opacity: 0.8; font-size: 0.85rem; display: block; margin-bottom: 0.3rem;">You</strong>
+                    ${escapeHtml(msg.content)}
+                </div>
+            `;
+        } else {
+            messageDiv.innerHTML = `
+                <div class="avatar">
+                    <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Felix&backgroundColor=b6e3f4" alt="AI Assistant">
+                </div>
+                <div class="message">
+                    <strong style="opacity: 0.8; font-size: 0.85rem; display: block; margin-bottom: 0.3rem;">AI Assistant</strong>
+                    ${escapeHtml(msg.content)}
+                </div>
+            `;
+        }
+        
+        chatHistoryDiv.appendChild(messageDiv);
+    });
+    
+    // Scroll to bottom
+    chatHistoryDiv.scrollTop = chatHistoryDiv.scrollHeight;
+}
+
+function clearChat() {
+    chatHistory = [];
+    displayChatHistory();
+    // Clear pending request
+    pendingRequest = null;
+    pendingQuestion = null;
+    // Hide check answer button
+    document.getElementById('check-answer-container').style.display = 'none';
+}
+
+function showStatus(message, type) {
+    const statusDiv = document.getElementById('status-message');
+    const className = type === 'success' ? 'status-indicator success' : 'status-indicator info';
+    statusDiv.innerHTML = `<div class="${className}">${escapeHtml(message)}</div>`;
+    
+    if (type === 'success') {
+        setTimeout(() => {
+            statusDiv.innerHTML = '';
+        }, 5000);
+    }
+}
+
+function showConnectionInfo() {
+    const infoDiv = document.getElementById('connection-info');
+    infoDiv.style.display = infoDiv.style.display === 'none' ? 'block' : 'none';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+
+{% endblock %}
+
