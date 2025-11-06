@@ -16,6 +16,7 @@ import os
 QDRANT_HOST = config("QDRANT_HOST", default="localhost")
 QDRANT_PORT = int(config("QDRANT_PORT", default=6333))
 LOG_FILE = config("QDRANT_LOG_FILE", default="application.log")
+DEFAULT_HF_API_KEY = config("HF_API_KEY", default="")
 
 # ---------- LOGGING ----------
 logging.basicConfig(
@@ -28,7 +29,6 @@ logging.basicConfig(
 )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-DEFAULT_HF_API_KEY = config("HF_API_KEY", default="")
 
 # ---------- TOKENIZER ----------
 _tokenizer = None
@@ -93,10 +93,16 @@ def split_text(text, max_tokens=1000):
 
 # ---------- QDRANT UTILS ----------
 def get_qdrant_client():
-    return QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+    try:
+        return QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+    except Exception as e:
+        logging.warning(f"Qdrant connection failed: {e}")
+        return None
 
 def get_existing_collections():
     client = get_qdrant_client()
+    if not client:
+        return []
     try:
         return [c.name for c in client.get_collections().collections]
     except Exception as e:
@@ -120,6 +126,8 @@ def get_collection_vector_size(client, collection_name):
 
 def ensure_collection_exists(client, collection_name, vector_size):
     existing = get_existing_collections()
+    if not client:
+        return
     if collection_name not in existing:
         client.create_collection(
             collection_name=collection_name,
@@ -127,56 +135,67 @@ def ensure_collection_exists(client, collection_name, vector_size):
         )
         logging.info(f"✅ Created new collection '{collection_name}' with dim={vector_size}")
     else:
-        # Optional: validate the dimension
-        info = client.get_collection(collection_name)
-        existing_dim = info.vectors_count if hasattr(info, 'vectors_count') else None
-        if existing_dim and existing_dim != vector_size:
-            logging.warning(
-                f"⚠ Dimension mismatch for '{collection_name}'. "
-                f"Existing={existing_dim}, Trying={vector_size}"
-            )
-            # Recreate the collection with correct dimension
-            client.delete_collection(collection_name)
-            client.create_collection(
-                collection_name=collection_name,
-                vectors_config=qmodels.VectorParams(size=vector_size, distance=qmodels.Distance.COSINE)
-            )
-            logging.info(f"✅ Recreated collection '{collection_name}' with dim={vector_size}")
+        try:
+            # Optional: validate the dimension
+            info = client.get_collection(collection_name)
+            existing_dim = info.vectors_count if hasattr(info, 'vectors_count') else None
+            if existing_dim and existing_dim != vector_size:
+                logging.warning(
+                    f"⚠ Dimension mismatch for '{collection_name}'. "
+                    f"Existing={existing_dim}, Trying={vector_size}"
+                )
+                # Recreate the collection with correct dimension
+                client.delete_collection(collection_name)
+                client.create_collection(
+                    collection_name=collection_name,
+                    vectors_config=qmodels.VectorParams(size=vector_size, distance=qmodels.Distance.COSINE)
+                )
+                logging.info(f"✅ Recreated collection '{collection_name}' with dim={vector_size}")
+        except Exception as e:
+            logging.error(f"Collection validation failed: {e}")
 
 
 
 # ---------- STORE CHUNKS ----------
 def store_chunks_in_qdrant(chunks, collection_name):
     client = get_qdrant_client()
-    embedder = SentenceTransformer("all-MiniLM-L6-v2")
-
-    embeddings = embedder.encode(chunks).tolist()
-    vector_size = len(embeddings[0])
-
-    ensure_collection_exists(client, collection_name, vector_size)
-
+    if not client:
+        logging.warning("Qdrant client not available.")
+        return False
+    
     try:
-        existing_count = client.count(collection_name=collection_name).count
-        start_id = existing_count
-    except Exception:
-        start_id = 0
+        embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        embeddings = embedder.encode(chunks).tolist()
+        vector_size = len(embeddings[0])
+        ensure_collection_exists(client, collection_name, vector_size)
 
-    points = [
-        qmodels.PointStruct(
-            id=start_id + i + 1,
-            vector=embeddings[i],
-            payload={"text": chunks[i]}
-        )
-        for i in range(len(chunks))
-    ]
+        try:
+            existing_count = client.count(collection_name=collection_name).count
+            start_id = existing_count
+        except Exception:
+            start_id = 0
 
-    client.upsert(collection_name=collection_name, points=points)
-    logging.info(f"✅ Stored {len(chunks)} chunks in '{collection_name}'.")
+        points = [
+            qmodels.PointStruct(
+                id=start_id + i + 1,
+                vector=embeddings[i],
+                payload={"text": chunks[i]}
+            )
+            for i in range(len(chunks))
+        ]
 
+        client.upsert(collection_name=collection_name, points=points)
+        logging.info(f"✅ Stored {len(chunks)} chunks in '{collection_name}'.")
+        return True
+    except Exception as e:
+        logging.error(f"Error storing chunks: {e}")
+        return False
 
 # ---------- Fetch Chunks ----------
 def fetch_chunks_from_collection(collection_name, batch_size=100):
     client = get_qdrant_client()
+    if not client:
+        return []
     all_chunks = []
     offset = None
 
@@ -203,7 +222,23 @@ def fetch_chunks_from_collection(collection_name, batch_size=100):
 
 # ---------- MAIN VIEW ----------
 def database_workflow(request):
-    existing_collections = get_existing_collections()
+    try:
+        existing_collections = get_existing_collections()
+    except Exception:
+        existing_collections = []
+
+    # Warn users if setup not ready
+    setup_missing = []
+    if not DEFAULT_HF_API_KEY:
+        setup_missing.append("Hugging Face API key not configured.")
+    if not get_qdrant_client():
+        setup_missing.append("Qdrant is not running or unreachable.")
+
+    if setup_missing:
+        return render(request, "database_chunks.html", {
+            "warning": "⚠ Setup incomplete. " + " ".join(setup_missing),
+            "existing_collections": existing_collections
+        })
 
     # Handle AJAX chunk fetch
     if request.method == "GET" and request.GET.get("collection_name"):
@@ -239,7 +274,13 @@ def database_workflow(request):
                 "selected_document_ids": selected_document_ids
             })
 
-        store_chunks_in_qdrant(text_chunks, collection_name)
+        success = store_chunks_in_qdrant(text_chunks, collection_name)
+
+        if not success:
+            return render(request, "database_chunks.html", {
+                "error": f"⚠ Failed to store chunks in '{collection_name}'. Ensure Qdrant is running.",
+                "existing_collections": existing_collections,
+            })
 
         return render(request, "database_chunks.html", {
             "documents": documents,

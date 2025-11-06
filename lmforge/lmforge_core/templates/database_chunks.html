@@ -8,6 +8,12 @@
     Selected documents will be processed into text chunks and stored in Qdrant.
   </p>
 
+  {% if warning %}
+  <div class="alert alert-warning">
+    {{ warning }}
+  </div>
+  {% endif %}
+
   {% if error %}
   <div class="alert alert-danger">{{ error }}</div>
   {% endif %}
