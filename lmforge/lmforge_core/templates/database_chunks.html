@@ -1,5 +1,8 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block content %}
+
+<link rel="stylesheet" href="{% static 'chunks.css' %}">
 
 <div class="container mt-4">
   <h2>Generate Chunks & Store in Vector DB</h2>
@@ -70,6 +73,7 @@
     <p class="text-muted">No documents selected.</p>
   {% endif %}
 </div>
+
 <h2>Available Qdrant Collections</h2>
 
 <select id="collectionSelect" class="form-select">
@@ -121,7 +125,11 @@ document.getElementById("collectionSelect").addEventListener("change", function(
       if (data.chunks && data.chunks.length > 0) {
         data.chunks.forEach((chunk, idx) => {
           const li = document.createElement("li");
-          li.textContent = `${idx + 1}. ${chunk.substring(0, 200)}...`;
+           li.className = "chunk-item";
+          li.innerHTML = `
+            <div class="chunk-index">${idx + 1}.</div>
+            <div class="chunk-text">${chunk}</div>
+          `;
           chunkList.appendChild(li);
         });
       } else {

@@ -137,6 +137,7 @@ def get_collection_vector_size(client, collection_name):
     return None
 
 def ensure_collection_exists(client, collection_name, vector_size):
+    _, qmodels = safe_import_qdrant()
     existing = get_existing_collections()
     if not client:
         return
@@ -170,6 +171,7 @@ def ensure_collection_exists(client, collection_name, vector_size):
 
 # ---------- STORE CHUNKS ----------
 def store_chunks_in_qdrant(chunks, collection_name):
+    _, qmodels = safe_import_qdrant()
     client = get_qdrant_client()
     if not client:
         logging.warning("Qdrant client not available.")
