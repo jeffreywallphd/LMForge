@@ -2,11 +2,20 @@ import json
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.conf import settings
-from qdrant_client import QdrantClient
 import logging
 from huggingface_hub import HfApi
 from decouple import config
 
+# ---------- Safe Import for Optional Qdrant ----------
+try:
+    from qdrant_client import QdrantClient
+    QDRANT_AVAILABLE = True
+except ModuleNotFoundError:
+    QdrantClient = None
+    QDRANT_AVAILABLE = False
+    logging.warning("Qdrant client not installed. Qdrant features will be disabled.")
+
+# ---------- Configuration ----------
 DEFAULT_HF_KEY = config("HF_API_KEY", default="")
 DEFAULT_HF_ACCOUNT = config("HF_ACCOUNT_NAME", default=None)
 QDRANT_HOST = config("QDRANT_HOST", default="localhost")
@@ -41,6 +50,8 @@ def home_view(request):
 
 # ---------- Handle Collection Deletion ----------
     if request.method == "POST":
+        if not QDRANT_AVAILABLE:
+            return JsonResponse({"error": "Qdrant client not installed."}, status=400)
         try:
             data = json.loads(request.body.decode())
             collection_name = data.get("collection_name")
@@ -52,28 +63,32 @@ def home_view(request):
             logging.error(f"Failed to delete collection: {e}")
             return JsonResponse({"error": str(e)}, status=500)
     
-    # ----- Qdrant collections -----
-    try:
-        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-        all_collections = client.get_collections().collections
-
-        for col in all_collections:
-            name = col.name
+# ----- Qdrant collections -----
+    if QDRANT_AVAILABLE:
             try:
-                info = client.get_collection(name)
-                count = getattr(info, "points_count", 0)
-            except Exception:
-                count = 0
+                client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+                all_collections = client.get_collections().collections
 
-            collections.append({
-                "name": name,
-                "count": count
-            })
+                for col in all_collections:
+                    name = col.name
+                    try:
+                        info = client.get_collection(name)
+                        count = getattr(info, "points_count", 0)
+                    except Exception:
+                        count = 0
 
-    except Exception as e:
-        logging.error(f"Failed to connect to Qdrant: {e}")
-        messages.append("⚠ Could not fetch Qdrant collections. Make sure Qdrant is running.")
+                    collections.append({
+                        "name": name,
+                        "count": count
+                    })
 
+            except Exception as e:
+                logging.error(f"Failed to connect to Qdrant: {e}")
+                messages.append("⚠ Could not fetch Qdrant collections. Make sure Qdrant is running.")
+    else:
+        messages.append("ℹ Qdrant not installed. Vector database features are disabled.")
+
+    # ---------- Render ----------
     return render(request, 'home.html', {
         "messages": messages,
         "models": models,

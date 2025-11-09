@@ -1,7 +1,5 @@
 from django.shortcuts import render
 from ..models.scraped_data import ScrapedData
-from qdrant_client import QdrantClient
-from qdrant_client.http import models as qmodels
 from django.http import JsonResponse
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -11,6 +9,7 @@ from decouple import config
 import torch
 import logging
 import os
+import importlib
 
 # ---------- LOAD SETTINGS ----------
 QDRANT_HOST = config("QDRANT_HOST", default="localhost")
@@ -92,13 +91,26 @@ def split_text(text, max_tokens=1000):
 
 
 # ---------- QDRANT UTILS ----------
+def safe_import_qdrant():
+    """Safely import Qdrant without crashing if it's missing."""
+    try:
+        qdrant_client = importlib.import_module("qdrant_client")
+        qmodels = importlib.import_module("qdrant_client.http.models")
+        return qdrant_client.QdrantClient, qmodels
+    except ImportError:
+        logging.warning("Qdrant client not installed. Qdrant features will be disabled.")
+        return None, None
+    
+
 def get_qdrant_client():
+    QdrantClient, _ = safe_import_qdrant()
+    if not QdrantClient:
+        return None
     try:
         return QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
     except Exception as e:
         logging.warning(f"Qdrant connection failed: {e}")
         return None
-
 def get_existing_collections():
     client = get_qdrant_client()
     if not client:

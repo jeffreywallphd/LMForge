@@ -40,7 +40,7 @@
 - .\venv\Scripts\activate
 - python manage.py runserver 
 
-7. If you want to setup qdrant vector db follow bellow steps:
+7. If you want to setup qdrant vector db follow bellow steps: (Not required if you do not intend to use Vector db. )
 - Podman must be installed on your system.
 - If you don’t have it yet, follow the official installation guide:
 - https://podman.io/getting-started/installation 
@@ -52,7 +52,7 @@
 8. Install Required Python Libraries:
 -Add these dependencies to your Django project’s environment:
 -pip install qdrant-client sentence-transformers
--If you’re using Hugging Face models for embedding or tokenizer operations, also install:
+-If you’re using Hugging Face models for embedding or tokenizer operations, also install: 
 -pip install transformers huggingface-hub
 
 9. Run Qdrant with Podman
