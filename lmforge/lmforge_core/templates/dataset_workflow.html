@@ -50,6 +50,18 @@
         </div>
     </div>
 
+    <!-- ✅ New Button to Generate Chunks & Store in Qdrant -->
+    <div class="col-3">
+        <form method="POST" action="{% url 'database-workflow' %}" id="generate_chunks_form">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary mt-3" style="margin-bottom: 1vh;"
+                onclick="redirectToChunkPage(event)">
+                    Generate Chunks & Store in Vector DB
+                </button>
+            </form>
+        </div>
+    </div>
+
     <nav aria-label="Page navigation">
         <ul class="pagination">
             {% if documents.has_previous %}
@@ -137,4 +149,35 @@
         process_selected.submit();
     }
 </script>
+
+<script>
+function redirectToChunkPage(event) {
+    event.preventDefault();
+
+    const selectionForm = document.getElementById('documentSelectionForm');
+    const chunkForm = document.getElementById('generate_chunks_form');
+
+    // Clear old inputs if any
+    chunkForm.querySelectorAll('input[name="selected_documents"]').forEach(el => el.remove());
+
+    // Copy selected checkboxes into new form
+    const checkboxes = selectionForm.querySelectorAll('input[name="selected_documents"]:checked');
+    if (checkboxes.length === 0) {
+        alert("Please select at least one document to generate chunks.");
+        return;
+    }
+
+    checkboxes.forEach(checkbox => {
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = 'selected_documents';
+        hiddenInput.value = checkbox.value;
+        chunkForm.appendChild(hiddenInput);
+    });
+
+    // Submit to document_detail view
+    chunkForm.submit();
+}
+</script>
+
 {% endblock %}

@@ -14,6 +14,43 @@
     </div>
 {% endif %}
 
+<h2>Database Chunks Collections</h2>
+<div>
+    <a href="{% url 'dataset-workflow' %}" class="button success">+ New Vector Database</a>
+    <div class="table-responsive workflow-table">
+        <table class="table table-striped table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th>Collection</th>
+                    <th>Chunks</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if collections %}
+                    {% for c in collections %}
+                    <tr>
+                        <td>{{ c.name }}</td>
+                        <td>{{ c.count }}</td>
+                        <td>
+                            <a href="{% url 'database-workflow' %}?collection={{ c.name }}" class="button">
+                                View / Manage
+                            </a>
+                            <!-- Delete button -->
+                            <button type="button" class="button danger delete-btn" data-name="{{ c.name }}">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr><td colspan="3" class="text-center">No collections found.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <h2>Datasets</h2>
 <div>
     <a href="{% url 'dataset-workflow' %}" class="button success">+ New Dataset</a>
@@ -66,4 +103,79 @@
         </table>
     </div>
 </div>
+<script>
+function getCSRFToken() {
+    let name = 'csrftoken';
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+    fetch("/api/collections_summary/")
+        .then(response => response.json())
+        .then(data => {
+            const tbody = document.getElementById("collections-body");
+            tbody.innerHTML = "";
+            if (data.length === 0) {
+                tbody.innerHTML = "<tr><td colspan='3'>No collections found</td></tr>";
+                return;
+            }
+            data.forEach(col => {
+                const row = `
+                    <tr>
+                        <td>${col.name}</td>
+                        <td>${col.count}</td>
+                        <td><a href="/database-workflow/?collection_name=${encodeURIComponent(col.name)}" class="button">View / Manage</a></td>
+                    </tr>
+                `;
+                tbody.insertAdjacentHTML("beforeend", row);
+            });
+        })
+        .catch(error => {
+            console.error("Error fetching collections:", error);
+            const tbody = document.getElementById("collections-body");
+            tbody.innerHTML = "<tr><td colspan='3'>Failed to load collections</td></tr>";
+        });
+});
+
+document.addEventListener("DOMContentLoaded", function() {
+    document.querySelectorAll(".delete-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const name = btn.dataset.name;
+            if (!confirm(`Are you sure you want to delete ${name}?`)) return;
+
+            try {
+                const res = await fetch(window.location.href, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRFToken": getCSRFToken()
+                    },
+                    body: JSON.stringify({ collection_name: name })
+                });
+
+                if (res.ok) {
+                    alert(`${name} deleted successfully`);
+                    location.reload();
+                } else {
+                    alert(`Failed to delete ${name}.`);
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Error occurred while deleting collection.");
+            }
+        });
+    });
+});
+</script>
 {% endblock %}
