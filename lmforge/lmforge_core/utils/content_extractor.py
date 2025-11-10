@@ -439,6 +439,12 @@ def _extract_metadata(soup: BeautifulSoup, url: str = None) -> dict:
             elif itemprop_modified.get("datetime"):
                 last_updated = itemprop_modified.get("datetime").strip()
     
+    # Check for Mayo Clinic specific moddate class
+    if not last_updated:
+        moddate_span = soup.find("span", class_="moddate")
+        if moddate_span:
+            last_updated = moddate_span.get_text(strip=True)
+    
     # Search for dedicated "last updated" elements if meta tags not found
     if not last_updated:
         # Look for elements with "last-updated" or "last-modified" in class/id
@@ -960,6 +966,61 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
             tag.decompose()
         except Exception:
             pass
+    
+    # Remove small forms (newsletter signups, search forms, etc.) but keep large page-wrapper forms
+    # Some sites (like Mayo Clinic) wrap entire page content in a form element
+    for form in list(soup.find_all('form')):
+        try:
+            form_text_len = _text_len(form)
+            # Only remove small forms (< 2000 chars) - likely signups/search
+            # Large forms (> 2000 chars) are probably page wrappers - unwrap instead
+            if form_text_len < 2000:
+                form.decompose()
+            else:
+                # Unwrap large forms to preserve their content
+                form.unwrap()
+        except Exception:
+            pass
+    
+    # Remove input/button elements that are likely form controls
+    # But be careful not to remove navigation buttons or interactive content
+    for elem in list(soup.find_all(['input', 'textarea', 'select'])):
+        try:
+            elem.decompose()
+        except Exception:
+            pass
+    
+    # Remove newsletter/subscription elements by common class/id patterns
+    newsletter_patterns = ['newsletter', 'subscription', 'email-capture', 'signup', 'sign-up']
+    for tag in list(soup.find_all(True)):
+        try:
+            # Check class attribute
+            cls = tag.get('class', [])
+            cls_str = ' '.join(cls).lower() if isinstance(cls, list) else str(cls).lower()
+            if any(pattern in cls_str for pattern in newsletter_patterns):
+                tag.decompose()
+                continue
+            
+            # Check id attribute
+            tag_id = tag.get('id', '')
+            if tag_id and any(pattern in tag_id.lower() for pattern in newsletter_patterns):
+                tag.decompose()
+                continue
+        except Exception:
+            pass
+    
+    # Remove header and footer elements, but only if they're small (likely nav/chrome)
+    # Large headers/footers may contain article content (e.g., HuggingFace docs)
+    for elem in list(soup.find_all(['header', 'footer'])):
+        try:
+            elem_text_len = _text_len(elem)
+            # Only remove if small (< 500 chars) - likely navigation/chrome
+            # Large headers/footers may contain article metadata or intro content
+            if elem_text_len < 500:
+                elem.decompose()
+            # Otherwise leave it for later processing
+        except Exception:
+            pass
 
     # Remove clearly junk containers site-wide (guard against removing large substantive sections)
     for tag in list(soup.find_all(True)):
@@ -988,19 +1049,6 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     # Strategy 2: If no semantic tags, fall back to content density scoring
     if not main:
         main = _densest_block(soup)
-
-    # Handle header/footer carefully: unwrap inside main, decompose outside
-    for hf in list(soup.find_all(["header", "footer"])):
-        try:
-            if main and hf in getattr(main, "descendants", []):
-                hf.unwrap()
-            else:
-                hf.decompose()
-        except Exception:
-            try:
-                hf.decompose()
-            except Exception:
-                pass
 
     # Gather multiple blocks when present
     blocks = _gather_content_blocks(soup, main)
@@ -1219,8 +1267,65 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     
     # Merge broken sentences (single linebreaks mid-sentence)
     body = _merge_broken_sentences(body)
+    
+    # Phase D: Remove duplicate content blocks
+    # Some sites (e.g., Mayo Clinic) have malformed HTML causing content duplication
+    # Check for large duplicate sections and remove them
+    body_lines = body.split('\n')
+    if len(body_lines) > 50:  # Only check if there's enough content
+        # Look for substantial duplicates (blocks of 20+ consecutive identical lines)
+        seen_sequences = {}
+        duplicate_ranges = []
+        
+        window_size = 20  # Check 20-line windows
+        for i in range(len(body_lines) - window_size):
+            # Create a signature from this window
+            window = tuple(body_lines[i:i+window_size])
+            window_sig = '\n'.join(window)
+            
+            if window_sig in seen_sequences:
+                # Found a duplicate! Mark range for removal
+                prev_start = seen_sequences[window_sig]
+                # Extend to find full duplicate block
+                dup_start = i
+                dup_end = i + window_size
+                # Extend forward while lines match
+                while dup_end < len(body_lines) and (dup_end - dup_start + prev_start) < len(body_lines):
+                    if body_lines[dup_end] == body_lines[dup_end - dup_start + prev_start]:
+                        dup_end += 1
+                    else:
+                        break
+                duplicate_ranges.append((dup_start, dup_end))
+                break  # Only remove first duplicate found
+            else:
+                seen_sequences[window_sig] = i
+        
+        # Remove duplicate ranges (work backwards to preserve indices)
+        for start, end in reversed(duplicate_ranges):
+            body_lines = body_lines[:start] + body_lines[end:]
+        
+        body = '\n'.join(body_lines)
+    
+    # Remove trailing newsletter/subscription remnants
+    newsletter_phrases = [
+        "You'll soon start receiving",
+        "Thank you for subscribing",
+        "Check your inbox",
+        "Welcome to our newsletter",
+        "You're now subscribed"
+    ]
+    body_lines = body.split('\n')
+    # Check last 5 lines for newsletter phrases
+    for i in range(max(0, len(body_lines) - 5), len(body_lines)):
+        if i < len(body_lines):
+            line = body_lines[i]
+            if any(phrase in line for phrase in newsletter_phrases):
+                # Remove this line and everything after
+                body_lines = body_lines[:i]
+                break
+    body = '\n'.join(body_lines)
 
-    # Phase D: prepend metadata
+    # Phase E: prepend metadata
     meta_lines = []
     source_display = url or ""
     
