@@ -9,6 +9,12 @@ from .views.scrape import ScrapeDataView, UploadPDFView, scrape_view, SaveManual
 from .views import SessionCreateView, ConversationListView, ConversationCreateView, SessionListView, ChatbotGenerateResponseView
 from .views.generate_q_and_a import generate_q_and_a, document_detail, download_json, upload_parquet_to_huggingface, download_csv, get_huggingface_datasets
 from .views.dataset_workflow import dataset_workflow_view, dataset_workflow_document_processor
+# RAG Chat views
+from .views.rag_chat import (
+    rag_chat_view, rag_upload_pdf, rag_process_json, rag_send_message,
+    rag_get_chunks, rag_embed_and_store, rag_status, rag_chat_history,
+    health_status_concurrent, health_check
+)
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -47,6 +53,20 @@ urlpatterns = [
 
     path('delete_document/<int:document_id>/<path:redirect_url>', delete_document, name='delete_document'),
     path('delete_document_mul/', delete_document_mul, name='delete_document_mul'),
+
+    # Health checks for rag Rag-chat
+    path('health/', health_check, name='health-check'),
+    path('health_concurrent/', health_status_concurrent, name='health-concurrent'),
+
+    # RAG Chat URLs - Main Interface
+    path('rag_chat_view/', rag_chat_view, name='rag-chat-view'),
+    path('rag_upload_pdf/', rag_upload_pdf, name='rag-upload-pdf'),
+    path('rag_process_json/', rag_process_json, name='rag-process-json'),
+    path('rag_send_message/', rag_send_message, name='rag-send-message'),
+    path('rag_get_chunks/<str:chunking_session_id>/', rag_get_chunks, name='rag-get-chunks'),
+    path('rag_embed_and_store/', rag_embed_and_store, name='rag-embed-and-store'),
+    path('rag_status/', rag_status, name='rag-status'),
+    path('rag_chat_history/<str:session_id>/', rag_chat_history, name='rag-chat-history'),
 ]
 
 

@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG System - All-in-One</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Markdown rendering support -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+    <!-- KaTeX for math equations -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/contrib/auto-render.min.js"></script>
+    <style>
+        body { background: #f5f7fa; }
+        .main-container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .section-card { 
+            background: white; 
+            border-radius: 12px; 
+            padding: 25px; 
+            margin-bottom: 20px; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        /* Enhanced Loading Overlay with Progress */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .loading-overlay.active {
+            display: flex;
+        }
+        .loading-container {
+            text-align: center;
+            background: white;
+            padding: 50px 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+            max-width: 500px;
+            min-width: 400px;
+        }
+        .spinner {
+            width: 140px;
+            height: 140px;
+            margin: 0 auto 25px;
+            position: relative;
+        }
+        .spinner-circle {
+            width: 100%;
+            height: 100%;
+            border: 10px solid #e3f2fd;
+            border-top: 10px solid #2196f3;
+            border-right: 10px solid #1976d2;
+            border-radius: 50%;
+            animation: spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+        }
+        .spinner-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2rem;
+            color: #2196f3;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .loading-text {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1976d2;
+            margin-bottom: 12px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        .loading-subtext {
+            color: #546e7a;
+            font-size: 1rem;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        .loading-details {
+            margin-top: 25px;
+            padding: 20px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e3f2fd 100%);
+            border-radius: 12px;
+            font-size: 0.9rem;
+            border: 1px solid #bbdefb;
+        }
+        .progress-bar-container {
+            margin-top: 20px;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #2196f3 0%, #1976d2 50%, #0d47a1 100%);
+            border-radius: 10px;
+            animation: progress-indeterminate 1.5s ease-in-out infinite;
+            width: 40%;
+        }
+        @keyframes progress-indeterminate {
+            0% { transform: translateX(-100%); }
+            50% { transform: translateX(250%); }
+            100% { transform: translateX(-100%); }
+        }
+        .loading-stage {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+            color: #37474f;
+            font-weight: 500;
+        }
+        .stage-icon {
+            color: #2196f3;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+        .status-healthy { background: #d4edda; color: #155724; }
+        .status-unhealthy { background: #f8d7da; color: #721c24; }
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: 500px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            background: #fafbfc;
+        }
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+        }
+        .message.user {
+            flex-direction: row-reverse;
+        }
+        .message-bubble {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            word-wrap: break-word;
+        }
+        .message.user .message-bubble {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .message.assistant .message-bubble {
+            background: white;
+            border: 1px solid #e1e4e8;
+            color: #24292e;
+        }
+        
+        /* Markdown styling for assistant messages */
+        .message.assistant .message-bubble h1,
+        .message.assistant .message-bubble h2,
+        .message.assistant .message-bubble h3,
+        .message.assistant .message-bubble h4,
+        .message.assistant .message-bubble h5,
+        .message.assistant .message-bubble h6 {
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        
+        .message.assistant .message-bubble h1 { font-size: 1.5rem; }
+        .message.assistant .message-bubble h2 { font-size: 1.3rem; }
+        .message.assistant .message-bubble h3 { font-size: 1.1rem; }
+        .message.assistant .message-bubble h4,
+        .message.assistant .message-bubble h5,
+        .message.assistant .message-bubble h6 { font-size: 1rem; }
+        
+        .message.assistant .message-bubble p {
+            margin-bottom: 0.75rem;
+            line-height: 1.6;
+        }
+        
+        .message.assistant .message-bubble ul,
+        .message.assistant .message-bubble ol {
+            margin-bottom: 0.75rem;
+            padding-left: 1.5rem;
+        }
+        
+        .message.assistant .message-bubble li {
+            margin-bottom: 0.25rem;
+            line-height: 1.5;
+        }
+        
+        .message.assistant .message-bubble code {
+            background-color: #f6f8fa;
+            padding: 0.125rem 0.25rem;
+            border-radius: 0.25rem;
+            font-family: 'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Menlo', monospace;
+            font-size: 0.875em;
+            color: #e83e8c;
+        }
+        
+        .message.assistant .message-bubble pre {
+            background-color: #f6f8fa;
+            border: 1px solid #e1e4e8;
+            border-radius: 0.375rem;
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+            overflow-x: auto;
+            line-height: 1.45;
+        }
+        
+        .message.assistant .message-bubble pre code {
+            background-color: transparent;
+            padding: 0;
+            border-radius: 0;
+            color: inherit;
+        }
+        
+        .message.assistant .message-bubble blockquote {
+            border-left: 4px solid #dfe2e5;
+            padding-left: 1rem;
+            margin: 0.75rem 0;
+            color: #6a737d;
+        }
+        
+        .message.assistant .message-bubble strong {
+            font-weight: 600;
+        }
+        
+        .message.assistant .message-bubble em {
+            font-style: italic;
+        }
+        
+        .message.assistant .message-bubble a {
+            color: #0366d6;
+            text-decoration: none;
+        }
+        
+        .message.assistant .message-bubble a:hover {
+            text-decoration: underline;
+        }
+        
+        .message.assistant .message-bubble table {
+            border-collapse: collapse;
+            margin: 0.75rem 0;
+            width: 100%;
+        }
+        
+        .message.assistant .message-bubble th,
+        .message.assistant .message-bubble td {
+            border: 1px solid #d0d7de;
+            padding: 0.375rem 0.75rem;
+            text-align: left;
+        }
+        
+        .message.assistant .message-bubble th {
+            background-color: #f6f8fa;
+            font-weight: 600;
+        }
+        
+        /* Math equation styling */
+        .message.assistant .message-bubble .katex-display {
+            margin: 1rem 0;
+            text-align: center;
+        }
+        
+        .message.assistant .message-bubble .katex {
+            font-size: 1.1em;
+        }
+        
+        .message.assistant .message-bubble .katex-display .katex {
+            font-size: 1.2em;
+        }
+        .chat-input-area {
+            padding: 15px;
+            border-top: 1px solid #e1e4e8;
+            background: white;
+        }
+        .typing-indicator {
+            display: none;
+            padding: 10px 20px;
+            color: #6c757d;
+        }
+        .typing-indicator.active { display: block; }
+        .context-chip {
+            display: inline-block;
+            background: #e7f3ff;
+            color: #0366d6;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            margin: 5px 3px 0 0;
+        }
+        .file-list {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            background: #f8f9fa;
+            margin-top: 10px;
+        }
+        .nav-pills .nav-link { border-radius: 8px; }
+        .nav-pills .nav-link.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+    </style>
+</head>
+<body>
+    <!-- Enhanced Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-container">
+            <div class="spinner">
+                <div class="spinner-circle"></div>
+                <div class="spinner-center">
+                    <i class="fas fa-file-pdf"></i>
+                </div>
+            </div>
+            <div class="loading-text">Processing PDFs</div>
+            <div class="loading-subtext">Optimized word-based chunking in progress</div>
+            
+            <!-- Progress Bar -->
+            <div class="progress-bar-container">
+                <div class="progress-bar-fill"></div>
+            </div>
+            
+            <!-- Loading Stages -->
+            <div class="loading-stage">
+                <i class="fas fa-upload stage-icon"></i>
+                <span>Uploading & Extracting Text</span>
+            </div>
+            
+            <div class="loading-details">
+                <div class="mb-2">
+                    <i class="fas fa-file-pdf text-danger me-2"></i>
+                    <strong><span id="fileCount">0</span></strong> file(s) selected
+                </div>
+                <div class="mb-2">
+                    <i class="fas fa-bolt text-warning me-2"></i>
+                    Using <strong>word-based</strong> recursive semantic chunking
+                </div>
+                <div class="text-muted small">
+                    <i class="fas fa-clock me-1"></i>
+                    This typically takes 5-15 seconds per document
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- Header -->
+        <div class="text-center mb-4">
+            <h1 class="display-5 mb-2">
+                <i class="fas fa-brain text-primary"></i> RAG System
+            </h1>
+            <p class="text-muted">Upload Documents, Process Data, and Chat with AI</p>
+            <div class="d-flex justify-content-center gap-3 mt-3 flex-wrap">
+                <span class="status-badge {% if backend_status == 'healthy' %}status-healthy{% else %}status-unhealthy{% endif %}">
+                    <i class="fas fa-server"></i> Backend: {{ backend_status|title }}
+                </span>
+                <span class="status-badge {% if ollama_status == 'healthy' %}status-healthy{% else %}status-unhealthy{% endif %}">
+                    <i class="fas fa-robot"></i> Ollama: {{ ollama_status|title }}
+                </span>
+                <span class="status-badge {% if database_status == 'healthy' %}status-healthy{% else %}status-unhealthy{% endif %}">
+                    <i class="fas fa-database"></i> Database: {{ database_status|title }}
+                </span>
+            </div>
+        </div>
+
+        <!-- Tabbed Interface -->
+        <div class="section-card">
+            <ul class="nav nav-pills mb-4" id="mainTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="upload-tab" data-bs-toggle="pill" 
+                            data-bs-target="#upload-section" type="button">
+                        <i class="fas fa-file-upload me-2"></i>Upload PDFs
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="json-tab" data-bs-toggle="pill" 
+                            data-bs-target="#json-section" type="button">
+                        <i class="fas fa-code me-2"></i>Process JSON
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="chat-tab" data-bs-toggle="pill" 
+                            data-bs-target="#chat-section" type="button">
+                        <i class="fas fa-comments me-2"></i>Chat
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="mainTabContent">
+                <!-- PDF Upload Section -->
+                <div class="tab-pane fade show active" id="upload-section">
+                    <h4 class="mb-3">
+                        <i class="fas fa-file-pdf text-danger me-2"></i>Upload & Process PDF Documents
+                    </h4>
+                    
+                    <!-- Enhanced Upload Card -->
+                    <div class="card border-primary shadow-sm mb-4">
+                        <div class="card-header bg-gradient-primary text-white">
+                            <h5 class="mb-0">
+                                <i class="fas fa-cloud-upload-alt me-2"></i>Step 1: Upload PDFs & Extract Chunks
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <form method="post" action="{% url 'rag-upload-pdf' %}" enctype="multipart/form-data" 
+                                  id="chunkNewForm" onsubmit="return handleUploadSubmit(event)">
+                                {% csrf_token %}
+                                
+                                <!-- File Input with Preview -->
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">
+                                        <i class="fas fa-file-pdf text-danger me-2"></i>Select PDF Files
+                                    </label>
+                                    <input type="file" name="pdf_files" class="form-control form-control-lg" 
+                                           multiple accept=".pdf" required id="chunkNewFiles" 
+                                           onchange="handleFileSelection()">
+                                    <div class="form-text">
+                                        <i class="fas fa-info-circle me-1"></i>
+                                        Select one or more PDF files. Uses optimized word-based chunking for fast processing.
+                                    </div>
+                                </div>
+
+                                <!-- Selected Files Preview -->
+                                <div id="selectedFilesPreview" class="mb-3" style="display:none;">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <h6 class="card-title mb-2">
+                                                <i class="fas fa-list me-2"></i>Selected Files (<span id="fileCountDisplay">0</span>)
+                                            </h6>
+                                            <div id="filesList" class="small"></div>
+                                            <div class="mt-2 text-muted small">
+                                                <i class="fas fa-hdd me-1"></i>Total Size: <span id="totalSize">0</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Chunking Info -->
+                                <div class="alert alert-info mb-3">
+                                    <div class="row align-items-center">
+                                        <div class="col-md-1 text-center">
+                                            <i class="fas fa-bolt fa-2x text-warning"></i>
+                                        </div>
+                                        <div class="col-md-11">
+                                            <strong>Optimized Word-Based Chunking</strong>
+                                            <p class="mb-0 small">
+                                                3-5x faster than character-based methods. Target: 200 words/chunk, Max: 300, Overlap: 30 words
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Submit Button -->
+                                <button type="submit" class="btn btn-primary btn-lg w-100" id="uploadBtn">
+                                    <i class="fas fa-rocket me-2"></i>Start Chunking Process
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- JSON Processing Section -->
+                <div class="tab-pane fade" id="json-section">
+                    <h4 class="mb-3">
+                        <i class="fas fa-code text-success me-2"></i>Process JSON Data
+                    </h4>
+                    <form method="post" action="{% url 'rag-process-json' %}">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label">JSON Data</label>
+                            <textarea name="json_data" class="form-control" rows="8" 
+                                      placeholder='{"text": "Your content here..."}'></textarea>
+                            <small class="form-text text-muted">Paste JSON with text/content fields</small>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Chunking Method</label>
+                                <select name="chunking_method" class="form-select">
+                                    <option value="recursive">Recursive Character</option>
+                                    <option value="sentence">Sentence-based</option>
+                                    <option value="semantic">Semantic</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Chunk Size</label>
+                                <input type="number" name="chunk_size" class="form-control" value="1000">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Chunk Overlap</label>
+                                <input type="number" name="chunk_overlap" class="form-control" value="200">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="fas fa-cogs me-2"></i>Process JSON
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Chat Section -->
+                <div class="tab-pane fade" id="chat-section">
+                    <h4 class="mb-3">
+                        <i class="fas fa-robot text-primary me-2"></i>Chat with Your Documents
+                    </h4>
+                    
+                    <div class="chat-container">
+                        <div class="chat-messages" id="chatMessages">
+                            <div class="text-center text-muted py-5">
+                                <i class="fas fa-comments fa-3x mb-3"></i>
+                                <p>Start asking questions about your uploaded documents</p>
+                            </div>
+                        </div>
+                        <div class="typing-indicator" id="typingIndicator">
+                            <i class="fas fa-circle-notch fa-spin me-2"></i>AI is typing...
+                        </div>
+                        <div class="chat-input-area">
+                            <div class="input-group">
+                                <input type="text" id="messageInput" class="form-control" 
+                                       placeholder="Ask a question about your documents..." 
+                                       onkeypress="handleEnter(event)">
+                                <button class="btn btn-primary" onclick="sendMessage()">
+                                    <i class="fas fa-paper-plane me-2"></i>Send
+                                </button>
+                            </div>
+                            <div class="form-check mt-2">
+                                <input type="checkbox" class="form-check-input" id="useRag" checked>
+                                <label class="form-check-label" for="useRag">Use RAG (Retrieval Augmented Generation)</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Messages Display -->
+        {% if messages %}
+        <div class="section-card">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        console.log('Backend URL from Django:', '{{ backend_url }}');
+        const API_BASE = '{{ backend_url }}';  // Use Django-provided backend URL
+        let currentSessionId = null;
+
+        // Configure marked for markdown rendering
+        marked.setOptions({
+            breaks: true,
+            gfm: true,
+            highlight: function(code, lang) {
+                const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                return hljs.highlight(code, { language }).value;
+            }
+        });
+
+        // Ensure KaTeX auto-render is available
+        function ensureKaTeXReady(callback) {
+            if (typeof renderMathInElement !== 'undefined') {
+                callback();
+            } else {
+                setTimeout(() => ensureKaTeXReady(callback), 100);
+            }
+        }
+
+        // Handle file selection with preview
+        function handleFileSelection() {
+            const input = document.getElementById('chunkNewFiles');
+            const preview = document.getElementById('selectedFilesPreview');
+            const filesList = document.getElementById('filesList');
+            const fileCountDisplay = document.getElementById('fileCountDisplay');
+            const totalSizeDisplay = document.getElementById('totalSize');
+            
+            if (!input || !input.files || input.files.length === 0) {
+                preview.style.display = 'none';
+                return;
+            }
+            
+            const files = Array.from(input.files);
+            const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+            
+            // Update count and size
+            fileCountDisplay.textContent = files.length;
+            totalSizeDisplay.textContent = formatFileSize(totalSize);
+            
+            // Generate file list HTML
+            filesList.innerHTML = files.map((file, idx) => `
+                <div class="d-flex justify-content-between align-items-center py-1 ${idx < files.length - 1 ? 'border-bottom' : ''}">
+                    <span>
+                        <i class="fas fa-file-pdf text-danger me-2"></i>
+                        ${file.name}
+                    </span>
+                    <span class="badge bg-secondary">${formatFileSize(file.size)}</span>
+                </div>
+            `).join('');
+            
+            preview.style.display = 'block';
+        }
+
+        // Format file size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // Handle upload submit with progress
+        function handleUploadSubmit(event) {
+            const input = document.getElementById('chunkNewFiles');
+            
+            if (!input || !input.files || input.files.length === 0) {
+                alert('Please select at least one PDF file');
+                event.preventDefault();
+                return false;
+            }
+            
+            // Update file count in overlay
+            document.getElementById('fileCount').textContent = input.files.length;
+            
+            // Show loading overlay
+            document.getElementById('loadingOverlay').classList.add('active');
+            
+            // Disable submit button
+            const submitBtn = document.getElementById('uploadBtn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+            
+            // Let form submit normally
+            return true;
+        }
+
+        // Hide loading overlay (in case of error)
+        function hideLoadingOverlay() {
+            document.getElementById('loadingOverlay').classList.remove('active');
+            const submitBtn = document.getElementById('uploadBtn');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-rocket me-2"></i>Start Chunking Process';
+            }
+        }
+
+        // Chat functionality
+        async function createSession() {
+            try {
+                const response = await fetch(`${API_BASE}/api/chat/session`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({user_id: 'user', session_name: 'Chat Session'})
+                });
+                const data = await response.json();
+                if (data.success) {
+                    currentSessionId = data.session_id;
+                    return true;
+                }
+            } catch (error) {
+                console.error('Session creation failed:', error);
+            }
+            return false;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            if (!message) return;
+
+            if (!currentSessionId) {
+                await createSession();
+            }
+
+            input.value = '';
+            displayMessage('user', message);
+            showTyping(true);
+
+            try {
+                const response = await fetch(`${API_BASE}/api/chat/message`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        message: message,
+                        use_rag: document.getElementById('useRag').checked
+                    })
+                });
+
+                const data = await response.json();
+                showTyping(false);
+
+                if (data.success) {
+                    displayMessage('assistant', data.response, data.context_chunks);
+                } else {
+                    displayMessage('assistant', 'Sorry, I encountered an error. Please try again.');
+                }
+            } catch (error) {
+                showTyping(false);
+                displayMessage('assistant', 'Connection error. Is the backend running?');
+            }
+        }
+
+        function displayMessage(role, content, contextChunks = null) {
+            const container = document.getElementById('chatMessages');
+            const initial = container.querySelector('.text-center');
+            if (initial) initial.remove();
+
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${role}`;
+            
+            // Render markdown for assistant messages, plain text for user messages
+            const processedContent = role === 'assistant' ? marked.parse(content) : content;
+            
+            let html = `<div class="message-bubble">${processedContent}`;
+            
+            if (contextChunks && contextChunks.length > 0) {
+                html += '<div class="mt-2">';
+                contextChunks.forEach(chunk => {
+                    html += `<span class="context-chip">
+                        <i class="fas fa-book me-1"></i>${chunk.document_name} 
+                        (${(chunk.similarity_score * 100).toFixed(0)}%)
+                    </span>`;
+                });
+                html += '</div>';
+            }
+            
+            html += '</div>';
+            msgDiv.innerHTML = html;
+            
+            // Highlight code blocks and render math equations if present
+            if (role === 'assistant') {
+                msgDiv.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+                
+                // Render math equations using KaTeX when ready
+                ensureKaTeXReady(() => {
+                    renderMathInElement(msgDiv, {
+                        delimiters: [
+                            {left: '$$', right: '$$', display: true},
+                            {left: '$', right: '$', display: false},
+                            {left: '\\[', right: '\\]', display: true},
+                            {left: '\\(', right: '\\)', display: false}
+                        ],
+                        throwOnError: false,
+                        errorColor: '#cc0000',
+                        strict: false
+                    });
+                });
+            }
+            
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function showTyping(show) {
+            const indicator = document.getElementById('typingIndicator');
+            indicator.classList.toggle('active', show);
+        }
+
+        function handleEnter(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // Real-time health status check
+        async function checkHealthStatus() {
+            try {
+                const response = await fetch('/api/health_concurrent/', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    updateStatusBadges(data);
+                } else {
+                    console.error('Health check failed:', response.status);
+                }
+            } catch (error) {
+                console.error('Health check error:', error);
+            }
+        }
+
+        // Update status badges in real-time
+        function updateStatusBadges(healthData) {
+            const backendBadge = document.querySelector('.status-badge:nth-child(1)');
+            const ollamaBadge = document.querySelector('.status-badge:nth-child(2)');
+            const databaseBadge = document.querySelector('.status-badge:nth-child(3)');
+            
+            if (backendBadge && healthData.services && healthData.services.backend) {
+                const status = healthData.services.backend.status;
+                backendBadge.className = `status-badge ${status === 'healthy' ? 'status-healthy' : 'status-unhealthy'}`;
+                backendBadge.innerHTML = `<i class="fas fa-server"></i> Backend: ${status.charAt(0).toUpperCase() + status.slice(1)}`;
+            }
+            
+            if (ollamaBadge && healthData.services && healthData.services.ollama) {
+                const status = healthData.services.ollama.status;
+                ollamaBadge.className = `status-badge ${status === 'healthy' ? 'status-healthy' : 'status-unhealthy'}`;
+                ollamaBadge.innerHTML = `<i class="fas fa-robot"></i> Ollama: ${status.charAt(0).toUpperCase() + status.slice(1)}`;
+            }
+            
+            if (databaseBadge && healthData.services && healthData.services.database) {
+                const status = healthData.services.database.status;
+                databaseBadge.className = `status-badge ${status === 'healthy' ? 'status-healthy' : 'status-unhealthy'}`;
+                databaseBadge.innerHTML = `<i class="fas fa-database"></i> Database: ${status.charAt(0).toUpperCase() + status.slice(1)}`;
+            }
+        }
+
+        // Check health status every 30 seconds
+        setInterval(checkHealthStatus, 30000);
+        
+        // Initial health check after page load
+        setTimeout(checkHealthStatus, 2000);
+
+        // Auto-dismiss alerts
+        setTimeout(() => {
+            document.querySelectorAll('.alert').forEach(alert => {
+                const bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            });
+        }, 5000);
+    </script>
+</body>
+</html>

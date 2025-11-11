@@ -1,0 +1,95 @@
+# Unified Ollama Container - Handles both embedding and chat with GPU/CPU fallback
+FROM ollama/ollama:latest
+
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Create app directory and ollama data directory
+RUN mkdir -p /app /root/.ollama
+
+# Expose Ollama port
+EXPOSE 11434
+
+# Create optimized startup script with GPU detection and model-specific optimizations
+RUN echo '#!/bin/bash\n\
+echo "Starting Unified Ollama service..."\n\
+# Detect GPU availability and configure accordingly\n\
+if nvidia-smi >/dev/null 2>&1; then\n\
+  echo "GPU detected, enabling GPU acceleration"\n\
+  export OLLAMA_GPU_ENABLED=1\n\
+  export OLLAMA_NUM_PARALLEL=6\n\
+  echo "GPU mode: 6 parallel requests for optimal throughput"\n\
+else\n\
+  echo "No GPU detected, using optimized CPU mode"\n\
+  export OLLAMA_GPU_ENABLED=0\n\
+  export OLLAMA_NUM_PARALLEL=4\n\
+  echo "CPU mode: 4 parallel requests"\n\
+fi\n\
+# Model-specific optimizations - CONSERVATIVE for stability\n\
+export OLLAMA_MAX_LOADED_MODELS=1\n\
+export OLLAMA_KEEP_ALIVE=5m\n\
+export OLLAMA_MAX_QUEUE=32\n\
+export OLLAMA_FLASH_ATTENTION=false\n\
+export OLLAMA_KV_CACHE_TYPE=f16\n\
+export OLLAMA_GPU_OVERHEAD=1.0\n\
+export OLLAMA_CONTEXT_LENGTH=1024\n\
+export OLLAMA_MULTIUSER_CACHE=false\n\
+export OLLAMA_SCHED_SPREAD=true\n\
+# Memory and stability settings\n\
+export OLLAMA_HOST=0.0.0.0\n\
+export OLLAMA_ORIGINS="*"\n\
+export OLLAMA_MAX_VRAM=2048\n\
+export OLLAMA_CPU_THREADS=2\n\
+# Start Ollama server\n\
+ollama serve &\n\
+OLLAMA_PID=$!\n\
+echo "Waiting for Ollama service to start..."\n\
+sleep 15\n\
+# Wait for API to be ready\n\
+while ! curl -f http://localhost:11434/api/tags >/dev/null 2>&1; do\n\
+  echo "Waiting for Ollama API..."\n\
+  sleep 5\n\
+done\n\
+echo "Ollama API ready, pulling and optimizing models..."\n\
+# Pull both models in parallel for faster startup\n\
+(\n\
+  echo "Pulling all-minilm:33m (33MB embedding model)..."\n\
+  if ollama pull all-minilm:33m; then\n\
+    echo "Embedding model ready - testing with minimal load"\n\
+    # Test embedding model with very simple request\n\
+    curl -s -X POST http://localhost:11434/api/embeddings \\\n\
+      -H "Content-Type: application/json" \\\n\
+      -d '"'"'{"model":"all-minilm:33m","prompt":"test"}'"'"' > /dev/null || echo "Embedding warmup failed"\n\
+    echo "Embedding model tested"\n\
+  else\n\
+    echo "Failed to pull embedding model"\n\
+  fi\n\
+) &\n\
+(\n\
+  echo "Pulling qwen2.5:0.5b-instruct (395MB)..."\n\
+  if ollama pull qwen2.5:0.5b-instruct; then\n\
+    echo "Chat model ready - testing with minimal settings"\n\
+    # Test chat model with ultra-conservative settings\n\
+    curl -s -X POST http://localhost:11434/api/generate \\\n\
+      -H "Content-Type: application/json" \\\n\
+      -d '"'"'{"model":"qwen2.5:0.5b-instruct","prompt":"Hi","stream":false,"options":{"num_ctx":512,"num_predict":10,"temperature":0.1,"num_gpu":0,"num_thread":1}}'"'"' > /dev/null || echo "Chat warmup failed"\n\
+    echo "Chat model tested and ready"\n\
+  else\n\
+    echo "Failed to pull chat model"\n\
+  fi\n\
+) &\n\
+# Wait for both downloads to complete\n\
+wait\n\
+echo "Unified Ollama service ready with stable models"\n\
+echo "Embedding: all-minilm:33m (tested and stable)"\n\
+echo "Chat: qwen2.5:0.5b-instruct (CPU mode for stability)"\n\
+echo "Parallel capacity: $OLLAMA_NUM_PARALLEL requests (conservative)"\n\
+wait $OLLAMA_PID\n\
+' > /app/start.sh && chmod +x /app/start.sh
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:11434/api/tags || exit 1
+
+# Use ENTRYPOINT for proper startup
+ENTRYPOINT ["/app/start.sh"]

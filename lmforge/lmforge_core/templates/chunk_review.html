@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review PDF Chunks - RAG System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background: #f5f7fa; }
+        .main-container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+        .chunk-preview-card {
+            border-left: 4px solid #007bff;
+            transition: all 0.2s;
+        }
+        .chunk-preview-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateX(5px);
+        }
+        .chunk-text {
+            max-height: 150px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .stat-badge {
+            background: #e9ecef;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin: 3px;
+        }
+        .quality-excellent { border-left-color: #28a745; }
+        .quality-good { border-left-color: #17a2b8; }
+        .quality-fair { border-left-color: #ffc107; }
+        
+        /* Enhanced Loading Modal Styles */
+        .modal-content {
+            border-radius: 16px;
+            border: none;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        .loading-spinner-container {
+            padding: 40px 20px;
+        }
+        .spinner-circular {
+            width: 100px;
+            height: 100px;
+            margin: 0 auto 20px;
+            position: relative;
+        }
+        .spinner-circular-inner {
+            width: 100%;
+            height: 100%;
+            border: 8px solid #f0f0f0;
+            border-top: 8px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loading-message {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        .loading-subtitle {
+            color: #6c757d;
+            font-size: 0.95rem;
+        }
+        .loading-icon-pulse {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <!-- Header -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h2 class="mb-1">
+                            <i class="fas fa-search-plus text-primary me-2"></i>Review PDF Chunks
+                        </h2>
+                        <p class="text-muted mb-0">Review chunking results before generating embeddings</p>
+                    </div>
+                    <a href="{% url 'rag-chat-view' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left me-2"></i>Back
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        {% if not session_data %}
+        <!-- No Session -->
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            No chunking session found. Please upload and chunk PDFs first.
+        </div>
+        {% else %}
+
+        <!-- Session Summary -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h3 class="text-primary mb-0">{{ session_data.total_files }}</h3>
+                        <small class="text-muted">Total Files</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h3 class="text-success mb-0">{{ session_data.total_chunks }}</h3>
+                        <small class="text-muted">Total Chunks</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h3 class="text-info mb-0">{{ session_data.total_pages|default:"N/A" }}</h3>
+                        <small class="text-muted">Total Pages</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Instructions -->
+        <div class="alert alert-success mb-4">
+            <div class="row align-items-center">
+                <div class="col-md-1 text-center">
+                    <i class="fas fa-check-circle fa-3x text-success"></i>
+                </div>
+                <div class="col-md-11">
+                    <h5 class="alert-heading mb-2">
+                        <i class="fas fa-rocket me-2"></i>Chunking Complete! Ready for Embedding
+                    </h5>
+                    <p class="mb-0">
+                        <strong>Next Step:</strong> Review the chunks below and click 
+                        <span class="badge bg-success ms-1 me-1">
+                            <i class="fas fa-database"></i> Process & Store Chunks
+                        </span>
+                        to generate embeddings and store them in pgVector for semantic search.
+                    </p>
+                    <small class="text-muted d-block mt-2">
+                        <i class="fas fa-lightbulb me-1"></i>
+                        Embeddings use Ollama's nomic-embed-text model (768 dimensions) for optimal retrieval quality.
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <!-- File Details -->
+        {% for file_data in session_data.files %}
+        <div class="card mb-4 quality-{{ file_data.quality.grade|lower }}">
+            <div class="card-header bg-white">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <h5 class="mb-0">
+                            <i class="fas fa-file-pdf text-danger me-2"></i>
+                            {{ file_data.filename }}
+                            <span class="badge bg-{{ file_data.quality.grade|lower|default:'secondary' }}">
+                                {{ file_data.quality.grade }}
+                            </span>
+                        </h5>
+                        <small class="text-muted">
+                            <i class="fas fa-file-alt me-1"></i>{{ file_data.page_count }} pages | 
+                            <i class="fas fa-cut me-1"></i>{{ file_data.chunk_count }} chunks | 
+                            <i class="fas fa-clock me-1"></i>{{ file_data.processing_time }}s
+                        </small>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <button class="btn btn-success btn-sm me-2" onclick="embedSingleFile('{{ file_data.filename }}')" 
+                                title="Generate embeddings and store in pgVector">
+                            <i class="fas fa-database me-1"></i>Process & Store Chunks
+                        </button>
+                        <button class="btn btn-outline-info btn-sm" data-bs-toggle="collapse" data-bs-target="#file-{{ forloop.counter }}"
+                                title="View detailed chunk information">
+                            <i class="fas fa-eye me-1"></i>View Details
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="collapse" id="file-{{ forloop.counter }}">
+                <div class="card-body">
+                    <!-- Statistics -->
+                    <div class="row mb-3">
+                        <div class="col-md-12">
+                            <h6 class="text-muted mb-2">Chunk Statistics:</h6>
+                            <div class="d-flex flex-wrap">
+                                <span class="stat-badge">
+                                    <i class="fas fa-chart-bar me-1"></i>
+                                    Avg Words: <strong>{{ file_data.statistics.avg_words }}</strong>
+                                </span>
+                                <span class="stat-badge">
+                                    <i class="fas fa-arrows-alt-h me-1"></i>
+                                    Range: {{ file_data.statistics.min_words }}-{{ file_data.statistics.max_words }}
+                                </span>
+                                <span class="stat-badge">
+                                    <i class="fas fa-check-circle me-1"></i>
+                                    Optimal: <strong>{{ file_data.statistics.optimal_ratio }}%</strong>
+                                </span>
+                                <span class="stat-badge">
+                                    <i class="fas fa-font me-1"></i>
+                                    Avg Chars: {{ file_data.statistics.avg_size_chars }}
+                                </span>
+                                <span class="stat-badge">
+                                    <i class="fas fa-paragraph me-1"></i>
+                                    Avg Sentences: {{ file_data.statistics.avg_sentences }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quality Recommendations -->
+                    {% if file_data.quality.recommendations %}
+                    <div class="alert alert-info mb-3">
+                        <h6 class="mb-2"><i class="fas fa-lightbulb me-2"></i>Quality Assessment:</h6>
+                        <ul class="mb-0">
+                            {% for rec in file_data.quality.recommendations %}
+                            <li>{{ rec }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+
+                    <!-- Chunk Previews -->
+                    <h6 class="text-muted mb-3">
+                        <i class="fas fa-eye me-2"></i>Chunk Previews (First 10):
+                    </h6>
+                    <div class="row">
+                        {% for chunk in file_data.chunk_previews %}
+                        <div class="col-md-6 mb-3">
+                            <div class="chunk-preview-card card h-100">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <strong class="text-primary">Chunk #{{ chunk.chunk_index }}</strong>
+                                        <span class="badge bg-{{ chunk.is_optimal|yesno:'success,warning' }}">
+                                            {{ chunk.word_count }} words
+                                        </span>
+                                    </div>
+                                    <div class="chunk-text">{{ chunk.text_preview }}</div>
+                                    <small class="text-muted mt-2 d-block">
+                                        {{ chunk.length }} characters
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% endif %}
+    </div>
+
+    <!-- Loading Modal -->
+    <!-- Enhanced Loading Modal -->
+    <div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body loading-spinner-container text-center">
+                    <div class="spinner-circular">
+                        <div class="spinner-circular-inner"></div>
+                    </div>
+                    <div class="loading-message">
+                        <i class="fas fa-brain loading-icon-pulse text-primary me-2"></i>
+                        Generating Embeddings
+                    </div>
+                    <p class="loading-subtitle" id="loadingMessage">Creating vector embeddings using Ollama</p>
+                    <div class="mt-3 text-muted small">
+                        <i class="fas fa-info-circle me-2"></i>This may take a few minutes depending on file size
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        const SESSION_ID = '{{ session_id }}';
+        const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+
+        async function embedSingleFile(filename) {
+            if (!confirm(`Generate embeddings for "${filename}" and store in vector database?`)) {
+                return;
+            }
+
+            loadingModal.show();
+            const loadingMsg = document.getElementById('loadingMessage');
+            loadingMsg.innerHTML = `<i class="fas fa-file-pdf text-danger me-2"></i>Processing ${filename}...`;
+
+            try {
+                const formData = new FormData();
+                formData.append('session_id', SESSION_ID);
+                formData.append('use_gpu', 'true');
+                formData.append('selected_files', JSON.stringify([filename]));
+
+                // Animate loading
+                let dots = 0;
+                const loadingInterval = setInterval(() => {
+                    dots = (dots + 1) % 4;
+                    loadingMsg.innerHTML = `<i class="fas fa-brain fa-pulse me-2"></i>Generating embeddings for ${filename}${'.'.repeat(dots)}`;
+                }, 500);
+
+                const response = await fetch(`${API_BASE}/api/rag_embed_and_store/`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                clearInterval(loadingInterval);
+                const result = await response.json();
+
+                if (result.success) {
+                    const fileResult = result.processed_files.find(f => f.filename === filename);
+                    loadingMsg.innerHTML = `<i class="fas fa-check-circle text-success me-2"></i>Complete!`;
+                    
+                    setTimeout(() => {
+                        loadingModal.hide();
+                        alert(
+                            `✅ Success for ${filename}!\n\n` +
+                            `• Embeddings: ${fileResult.embeddings_stored}\n` +
+                            `• Time: ${result.processing_time}s\n` +
+                            `• Speed: ${result.embeddings_per_second} emb/sec`
+                        );
+                        location.reload();
+                    }, 1000);
+                } else {
+                    alert(`❌ Error: ${result.error}`);
+                }
+            } catch (error) {
+                loadingModal.hide();
+                alert(`❌ Network error: ${error.message}`);
+            }
+        }
+    </script>
+</body>
+</html>

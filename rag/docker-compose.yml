@@ -1,0 +1,133 @@
+services:
+
+  # Step 1: Unified Ollama Container - Handles both embedding and chat
+  # Auto-detects GPU/CPU and optimizes accordingly
+  # Downloads both models (nomic-embed-text + llama3.2) in parallel
+  ollama:
+    build:
+      context: .
+      dockerfile: Dockerfile.ollama-unified
+    container_name: pdf-rag-ollama-unified
+    ports:
+      - "11434:11434"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Conservative settings for stability on GTX 1050 (4GB VRAM)
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_KEEP_ALIVE=5m
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_MAX_QUEUE=128
+      - OLLAMA_FLASH_ATTENTION=false
+      - OLLAMA_KV_CACHE_TYPE=f16
+      - OLLAMA_GPU_OVERHEAD=0.5
+      - OLLAMA_LOAD_TIMEOUT=5m
+      # Reduced context for memory efficiency
+      - OLLAMA_CONTEXT_LENGTH=1024
+      # Conservative multi-user settings
+      - OLLAMA_MULTIUSER_CACHE=false
+      - OLLAMA_SCHED_SPREAD=true
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 900s
+    networks:
+      - pdf-rag-network
+
+  # Step 2: Run the Postgres container and the database will store the metadata and Vector store data
+  # Check the container logs to ensure the database is running properly
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    container_name: pdf-rag-postgres
+    environment:
+      - POSTGRES_DB=pdf_rag_db
+      - POSTGRES_USER=pdf_rag_user
+      - POSTGRES_PASSWORD=pdf_rag_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pdf_rag_user -d pdf_rag_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - pdf-rag-network
+
+  # Step 3: Run the backend service after the database and models are up and running
+  # It has checks so if just run this container it will start ollama containers and postgres if not running
+  # Check the container logs to ensure the backend endpoint to load json is working properly
+  # Initially we load the embedding from json, that will take time
+  # Check logs
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: pdf-rag-backend
+    volumes:
+      - ./rag-backend:/app
+      - ./jsons:/app/jsons
+      - ./scripts/docs:/app/docs
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=pdf_rag_db
+      - DB_USER=pdf_rag_user
+      - DB_PASSWORD=pdf_rag_password
+      - OLLAMA_URL=http://ollama:11434
+    ports:
+      - "8100:8000"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - pdf-rag-network
+
+  # Step 4: Frontend now runs in separate workspace - removed from docker-compose
+  # Frontend is managed independently
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  pdf-rag-network:
+    driver: bridge

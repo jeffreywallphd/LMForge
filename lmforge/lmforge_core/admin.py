@@ -9,6 +9,7 @@ from .models.Answer import Answer as AnswerTable
 from .models.Source import Source as SourceTable
 from .models.Document import Document as DocumentTable
 from .models.model_stats import ModelStats as ModelStatsTable
+from .models.rag_chat import ChatSession, ProcessedDocument, ChatMessage
 
 admin.site.register(ScrapedDataTable)
 admin.site.register(LicenseTable)
@@ -19,4 +20,7 @@ admin.site.register(ReviewerTable)
 admin.site.register(AnswerTable)
 admin.site.register(SourceTable)
 admin.site.register(DocumentTable)
-admin.site.register(ModelStatsTable) 
+admin.site.register(ModelStatsTable)
+admin.site.register(ChatSession)
+admin.site.register(ProcessedDocument)
+admin.site.register(ChatMessage) 
