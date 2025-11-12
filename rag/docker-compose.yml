@@ -52,9 +52,9 @@ services:
       dockerfile: Dockerfile.postgres
     container_name: pdf-rag-postgres
     environment:
-      - POSTGRES_DB=pdf_rag_db
-      - POSTGRES_USER=pdf_rag_user
-      - POSTGRES_PASSWORD=pdf_rag_password
+      - POSTGRES_DB=${DATABASE_NAME:-pdf_rag_db}
+      - POSTGRES_USER=${DATABASE_USER:-pdf_rag_user}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD:-pdf_rag_password}
     ports:
       - "5433:5432"
     volumes:

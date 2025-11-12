@@ -17,6 +17,7 @@ import uuid
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from clients.ollama_client import ollama_client
+from clients.chromadb_client import ChromaClient
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -152,7 +153,7 @@ class EmbeddingService:
         
         if chunks:
             avg_words = sum(c['word_count'] for c in chunks) / len(chunks)
-            logger.info(f"✅ Fast chunking: {len(chunks)} chunks, avg {avg_words:.1f} words, {processing_time:.2f}s")
+            logger.info(f"Fast chunking: {len(chunks)} chunks, avg {avg_words:.1f} words, {processing_time:.2f}s")
         
         return chunks
     
@@ -187,7 +188,7 @@ class EmbeddingService:
                 logger.error("Failed to generate embeddings")
                 return [[0.0] * 768 for _ in texts]
             
-            logger.info(f"✅ Generated {len(embeddings)} embeddings")
+            logger.info(f"Generated {len(embeddings)} embeddings")
             return embeddings
             
         except Exception as e:
@@ -216,7 +217,40 @@ class EmbeddingService:
             
             cursor = conn.cursor()
             
-            # Create document entry
+            # If caller requested chroma storage via metadata flag, route to Chroma
+            storage_backend = metadata.get('storage_backend') if metadata else os.getenv('STORAGE_BACKEND', 'pgvector')
+            if storage_backend and storage_backend.lower() == 'chroma':
+                # Use ChromaClient to upsert embeddings
+                try:
+                    chroma = ChromaClient(persist_directory=os.getenv('CHROMA_PERSIST_DIR'))
+                    collection_name = os.getenv('CHROMA_COLLECTION', 'lmforge_collection')
+                    ids = []
+                    embs = []
+                    metadatas = []
+                    docs = []
+
+                    base_doc_id = filename.replace('.pdf', '').replace(' ', '_').lower()
+                    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                        ids.append(f"{base_doc_id}_{i}")
+                        embs.append(embedding)
+                        metadatas.append({
+                            'filename': filename,
+                            'chunk_index': chunk.get('chunk_index', i),
+                            'word_count': chunk.get('word_count', 0)
+                        })
+                        docs.append(chunk.get('text', '')[:10000])
+
+                    ok = chroma.upsert(collection_name, ids=ids, embeddings=embs, metadatas=metadatas, documents=docs)
+                    if ok:
+                        logger.info(f"Stored {len(ids)} chunks to Chroma collection '{collection_name}' for {filename}")
+                        return len(ids)
+                    else:
+                        logger.error("Failed to upsert to Chroma; falling back to pgvector storage")
+                        # fall through to pgvector storage
+                except Exception as e:
+                    logger.error(f"Chroma storage error: {e}. Falling back to pgvector.")
+
+            # Create document entry (pgvector path)
             document_id = filename.replace('.pdf', '').replace(' ', '_').lower()
             session_id = metadata.get('session_id', str(uuid.uuid4())) if metadata else str(uuid.uuid4())
             
@@ -316,7 +350,7 @@ class EmbeddingService:
             if failed_chunks:
                 logger.warning(f"Failed to store {len(failed_chunks)} chunks: {failed_chunks[:10]}...")
             
-            logger.info(f"✅ Stored {stored_count} chunks for {filename} (failed: {len(failed_chunks)})")
+            logger.info(f"Stored {stored_count} chunks for {filename} (failed: {len(failed_chunks)})")
             
             return stored_count
             
@@ -479,11 +513,12 @@ class EmbeddingService:
             enhanced_chunk["service_used"] = "chunking_analysis_mode"
             enhanced_chunks.append(enhanced_chunk)
         
-        logger.info(f"✅ Analysis complete for {len(enhanced_chunks)} chunks")
+        logger.info(f"Analysis complete for {len(enhanced_chunks)} chunks")
         return enhanced_chunks
     
     async def search_similar_chunks(self, query_embedding: List[float], top_k: int = 5, 
-                                   threshold: float = 0.7) -> List[Dict[str, Any]]:
+                                   threshold: float = 0.7,
+                                   storage_backend: str = None) -> List[Dict[str, Any]]:
         """
         Search for similar chunks using vector similarity
         Args:
@@ -494,15 +529,56 @@ class EmbeddingService:
             List of similar chunks with metadata
         """
         try:
+            # If storage_backend requests chroma, use ChromaClient
+            if storage_backend and storage_backend.lower() == 'chroma':
+                try:
+                    chroma = ChromaClient(persist_directory=os.getenv('CHROMA_PERSIST_DIR'))
+                    collection_name = os.getenv('CHROMA_COLLECTION', 'lmforge_collection')
+                    result = chroma.query(collection_name, embedding=query_embedding, top_k=top_k)
+                    if not result:
+                        return []
+
+                    ids = result.get('ids', [])
+                    docs = result.get('documents', [])
+                    metadatas = result.get('metadatas', [])
+                    distances = result.get('distances', [])
+
+                    similar_chunks = []
+                    for i, _id in enumerate(ids):
+                        dist = distances[i] if i < len(distances) else 0.0
+                        # Convert distance -> similarity (approx)
+                        try:
+                            similarity = 1.0 - float(dist)
+                        except Exception:
+                            similarity = 0.0
+
+                        chunk = {
+                            "chunk_id": _id,
+                            "document_id": metadatas[i].get('filename', 'unknown') if i < len(metadatas) else 'unknown',
+                            "content": docs[i] if i < len(docs) else '',
+                            "chunk_index": metadatas[i].get('chunk_index', 0) if i < len(metadatas) else 0,
+                            "metadata": metadatas[i] if i < len(metadatas) else {},
+                            "document_name": metadatas[i].get('filename', 'Unknown') if i < len(metadatas) else 'Unknown',
+                            "document_metadata": {},
+                            "similarity_score": float(similarity)
+                        }
+                        similar_chunks.append(chunk)
+
+                    logger.info(f"Chroma: found {len(similar_chunks)} similar chunks")
+                    return similar_chunks
+                except Exception as e:
+                    logger.error(f"Error searching Chroma: {e}")
+
+            # Default: pgvector search
             conn = self.get_db_connection()
             if not conn:
                 logger.error("No database connection available")
                 return []
-            
+
             with conn.cursor() as cur:
                 # Convert embedding to string format for pgvector
                 embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
-                
+
                 # Search for similar chunks using cosine similarity
                 search_query = """
                 SELECT 
@@ -521,10 +597,10 @@ class EmbeddingService:
                 ORDER BY c.embedding <=> %s::vector
                 LIMIT %s
                 """
-                
+
                 cur.execute(search_query, (embedding_str, embedding_str, threshold, embedding_str, top_k))
                 results = cur.fetchall()
-                
+
                 similar_chunks = []
                 for row in results:
                     chunk = {
@@ -538,7 +614,7 @@ class EmbeddingService:
                         "similarity_score": float(row[7])
                     }
                     similar_chunks.append(chunk)
-                
+
                 logger.info(f"Found {len(similar_chunks)} similar chunks (threshold: {threshold})")
                 return similar_chunks
                 

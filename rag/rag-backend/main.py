@@ -112,6 +112,7 @@ class ChatMessageRequest(BaseModel):
     model: Optional[str] = None
     use_rag: Optional[bool] = True
     max_context_chunks: Optional[int] = 5
+    storage_backend: Optional[str] = 'pgvector'
 
 class ChatMessageResponse(BaseModel):
     success: bool
@@ -598,7 +599,8 @@ async def api_chunk_pdfs_only(files: List[UploadFile] = File(...)):
 async def api_embed_and_store(
     session_id: str = Form(...),
     use_gpu: bool = Form(True),
-    selected_files: Optional[str] = Form(None)  # JSON array of filenames
+    selected_files: Optional[str] = Form(None),  # JSON array of filenames
+    storage_backend: str = Form('pgvector')
 ):
     """
     NEW WORKFLOW: Generate embeddings and store in pgVector
@@ -671,11 +673,15 @@ async def api_embed_and_store(
                 continue
             
             # Store in pgVector database
+            # Add storage backend info into metadata so embedding service can route storage
+            meta = chunk_data.get('metadata', {}) or {}
+            meta['storage_backend'] = storage_backend
+
             stored_count = await embedding_service.store_chunks_with_embeddings(
                 filename=filename,
                 chunks=chunks,
                 embeddings=embeddings,
-                metadata=chunk_data.get('metadata', {})
+                metadata=meta
             )
             
             total_embeddings += stored_count
@@ -700,6 +706,7 @@ async def api_embed_and_store(
             "processing_time": round(processing_time, 2),
             "embeddings_per_second": round(embeddings_per_second, 2),
             "service_used": "GPU Ollama" if use_gpu else "CPU Ollama",
+            "storage_backend": storage_backend,
             "workflow_step": "embedding_complete",
             "message": f"Successfully generated {total_embeddings} embeddings in {processing_time:.2f}s"
         }
@@ -852,10 +859,12 @@ async def send_chat_message(request: ChatMessageRequest):
         if not session_data:
             raise HTTPException(status_code=404, detail="Chat session not found")
         
-        # Generate RAG response
+        # Generate RAG response (pass storage backend selection)
         response = await chat_service.generate_rag_response(
             user_message=request.message,
-            session_id=request.session_id
+            session_id=request.session_id,
+            context_chunks=None,
+            storage_backend=(request.storage_backend or 'pgvector')
         )
         
         if response["success"]:

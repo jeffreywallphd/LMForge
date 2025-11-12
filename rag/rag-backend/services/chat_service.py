@@ -187,7 +187,8 @@ class ChatService:
             return 0  # Return 0 for graceful degradation
     
     async def retrieve_relevant_context(self, query: str, session_id: str = None, 
-                                       top_k: int = None) -> List[Dict[str, Any]]:
+                                       top_k: int = None,
+                                       storage_backend: str = 'pgvector') -> List[Dict[str, Any]]:
         """Retrieve relevant chunks from the knowledge base using aggressive RAG search"""
         top_k = top_k or self.max_context_chunks
         
@@ -221,7 +222,8 @@ class ChatService:
             primary_chunks = await embedding_service.search_similar_chunks(
                 query_embedding, 
                 top_k=top_k,
-                threshold=self.similarity_threshold
+                threshold=self.similarity_threshold,
+                storage_backend=storage_backend
             )
             all_chunks.extend(primary_chunks)
             
@@ -232,7 +234,8 @@ class ChatService:
                     secondary_chunks = await embedding_service.search_similar_chunks(
                         original_embedding,
                         top_k=top_k//2,
-                        threshold=self.similarity_threshold - 0.1  # Lower threshold
+                        threshold=self.similarity_threshold - 0.1,  # Lower threshold
+                        storage_backend=storage_backend
                     )
                     all_chunks.extend(secondary_chunks)
             
@@ -276,7 +279,8 @@ class ChatService:
             return []
     
     async def generate_rag_response(self, user_message: str, session_id: str, 
-                                   context_chunks: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+                                   context_chunks: List[Dict[str, Any]] = None,
+                                   storage_backend: str = 'pgvector') -> Dict[str, Any]:
         """
         Generate a comprehensive response using enhanced RAG with chat history
         """
@@ -288,7 +292,9 @@ class ChatService:
             
             # Retrieve relevant context if not provided (now includes chat history)
             if context_chunks is None:
-                context_chunks = await self.retrieve_relevant_context(user_message, session_id)
+                # Use provided storage backend preference when retrieving context
+                session_backend = storage_backend or os.getenv('DEFAULT_STORAGE_BACKEND', 'pgvector')
+                context_chunks = await self.retrieve_relevant_context(user_message, session_id, storage_backend=session_backend)
             
             # Build enhanced prompt with chat history and comprehensive context
             prompt = self._build_enhanced_prompt(user_message, context_chunks, chat_history)

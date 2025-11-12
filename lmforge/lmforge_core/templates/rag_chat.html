@@ -565,6 +565,14 @@
                                 <input type="checkbox" class="form-check-input" id="useRag" checked>
                                 <label class="form-check-label" for="useRag">Use RAG (Retrieval Augmented Generation)</label>
                             </div>
+                            <div class="mt-2">
+                                <label class="form-label small">Storage Backend</label>
+                                <select id="storageBackend" class="form-select form-select-sm" style="max-width:220px;">
+                                    <option value="pgvector" selected>pgvector (Postgres)</option>
+                                    <option value="chroma">ChromaDB</option>
+                                </select>
+                                <div class="form-text small">Choose retrieval/storage backend for RAG (pgvector or ChromaDB)</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -724,10 +732,11 @@
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
-                        session_id: currentSessionId,
-                        message: message,
-                        use_rag: document.getElementById('useRag').checked
-                    })
+                            session_id: currentSessionId,
+                            message: message,
+                            use_rag: document.getElementById('useRag').checked,
+                            storage_backend: document.getElementById('storageBackend') ? document.getElementById('storageBackend').value : 'pgvector'
+                        })
                 });
 
                 const data = await response.json();

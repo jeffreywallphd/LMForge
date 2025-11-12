@@ -17,6 +17,7 @@ from psycopg2.extras import RealDictCursor
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from clients.ollama_client import ollama_client
+from clients.chromadb_client import ChromaClient
 
 # Configure logging
 logging.basicConfig(
@@ -317,7 +318,8 @@ class RAGVectorInitializer:
             conn = self.get_db_connection()
             if not conn:
                 return False
-            
+            # Determine storage backend from environment or metadata
+            storage_backend = os.getenv('STORAGE_BACKEND', 'pgvector')
             with conn.cursor() as cur:
                 # Create document record
                 filename = os.path.basename(json_file)
@@ -359,7 +361,7 @@ class RAGVectorInitializer:
                 
                 document_pk = cur.fetchone()[0]
                 
-                # Insert chunks with embeddings
+                # Insert chunks with embeddings (pgvector path)
                 chunks_stored = 0
                 for idx, chunk in enumerate(chunks):
                     if 'embedding' not in chunk:
@@ -408,6 +410,42 @@ class RAGVectorInitializer:
                 conn.rollback()
                 conn.close()
             return False
+
+    def store_in_chroma(self, json_file: str, chunks: List[Dict[str, Any]]) -> bool:
+        """Store chunks into ChromaDB using ChromaClient"""
+        try:
+            chroma = ChromaClient(persist_directory=os.getenv('CHROMA_PERSIST_DIR'))
+            collection_name = os.getenv('CHROMA_COLLECTION', 'lmforge_collection')
+
+            ids = []
+            embs = []
+            metadatas = []
+            docs = []
+
+            base_doc_id = os.path.basename(json_file).replace('.json', '').replace(' ', '_')
+            for i, chunk in enumerate(chunks):
+                if 'embedding' not in chunk:
+                    continue
+                ids.append(f"{base_doc_id}_{i}")
+                embs.append(chunk['embedding'])
+                metadatas.append({
+                    'section_title': chunk.get('section_title', ''),
+                    'source_file': chunk.get('source_file', ''),
+                    'type': chunk.get('type', 'content'),
+                    'word_count': chunk.get('word_count', 0)
+                })
+                docs.append(chunk.get('content', '')[:10000])
+
+            ok = chroma.upsert(collection_name, ids=ids, embeddings=embs, metadatas=metadatas, documents=docs)
+            if ok:
+                logger.info(f"Stored {len(ids)} chunks to Chroma collection '{collection_name}' for {json_file}")
+                return True
+            else:
+                logger.error("Failed to upsert into Chroma")
+                return False
+        except Exception as e:
+            logger.error(f"Error storing in Chroma: {e}")
+            return False
     
     def initialize(self, force: bool = False, use_gpu: bool = True) -> Dict[str, Any]:
         """
@@ -448,36 +486,42 @@ class RAGVectorInitializer:
         # Process each JSON file
         total_chunks = 0
         files_processed = 0
-        
+
+        # Allow selecting storage backend via environment variable
+        storage_backend = os.getenv('STORAGE_BACKEND', 'pgvector')
+
         for json_file in json_files:
             logger.info(f"\nProcessing: {os.path.basename(json_file)}")
-            
+
             try:
                 # Load JSON data
                 with open(json_file, 'r', encoding='utf-8') as f:
                     json_data = json.load(f)
-                
+
                 # Extract chunks
                 chunks = self.extract_chunks_from_json(json_data)
                 if not chunks:
                     logger.warning(f"No chunks extracted from {json_file}")
                     continue
-                
+
                 # Generate embeddings
                 enhanced_chunks = self.generate_embeddings(chunks, use_gpu=use_gpu)
                 if not enhanced_chunks:
                     logger.warning(f"No embeddings generated for {json_file}")
                     continue
-                
-                # Store in database
-                success = self.store_in_database(json_file, enhanced_chunks)
+
+                # Store in selected backend
+                if storage_backend.lower() == 'chroma':
+                    success = self.store_in_chroma(json_file, enhanced_chunks)
+                else:
+                    success = self.store_in_database(json_file, enhanced_chunks)
                 if success:
                     total_chunks += len(enhanced_chunks)
                     files_processed += 1
                     logger.info(f"✅ Successfully processed {os.path.basename(json_file)}")
                 else:
                     logger.error(f"❌ Failed to store data for {json_file}")
-                
+
             except Exception as e:
                 logger.error(f"Error processing {json_file}: {e}")
                 continue
