@@ -1244,19 +1244,20 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
                         lang = start_match.group(1)
                         # Remove sentinel markers
                         code_body = part.replace(start_match.group(0), "").replace("__FENCE_END__", "")
-                        # Generate fence with language hint
+                        # Generate fence with language hint and proper spacing
                         fence_open = f"```{lang}" if lang else "```"
-                        code_content = f"{fence_open}{code_body}```"
+                        # Ensure blank lines around code fences for proper rendering
+                        code_content = f"\n\n{fence_open}\n{code_body.strip()}\n```\n\n"
                         out_parts.append(code_content)
                     else:
                         # Fallback: fully remove prefix pattern __FENCE_START__{lang}__
-                        code_content = re.sub(r"__FENCE_START__[^\n]*?__", "```", part)
-                        code_content = code_content.replace("__FENCE_END__", "```")
+                        code_content = re.sub(r"__FENCE_START__[^\n]*?__", "\n\n```\n", part)
+                        code_content = code_content.replace("__FENCE_END__", "\n```\n\n")
                         out_parts.append(code_content)
                 except Exception:
                     # Fallback on error: fully remove prefix pattern
-                    code_content = re.sub(r"__FENCE_START__[^\n]*?__", "```", part)
-                    code_content = code_content.replace("__FENCE_END__", "```")
+                    code_content = re.sub(r"__FENCE_START__[^\n]*?__", "\n\n```\n", part)
+                    code_content = code_content.replace("__FENCE_END__", "\n```\n\n")
                     out_parts.append(code_content)
             else:
                 # Non-code — apply whitespace collapsing
