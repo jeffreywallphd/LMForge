@@ -1,10 +1,14 @@
+"""
+Django-adapted ChromaDB Client for LMForge
+"""
 import os
 import logging
+from django.conf import settings
 
 try:
     import chromadb
-    from chromadb.config import Settings
-except Exception:
+    from chromadb.config import Settings as ChromaSettings
+except ImportError:
     chromadb = None
 
 logger = logging.getLogger(__name__)
@@ -23,13 +27,18 @@ class ChromaClient:
             self._collection = None
             return
 
-        # Allow overriding the persist directory via env var
-        persist_directory = persist_directory or os.getenv("CHROMA_PERSIST_DIR")
+        # Allow overriding the persist directory via Django settings or env var
+        persist_directory = (persist_directory or 
+                           getattr(settings, 'CHROMA_PERSIST_DIR', None) or
+                           os.getenv("CHROMA_PERSIST_DIR"))
 
         try:
             if persist_directory:
-                settings = Settings(chroma_db_impl="duckdb+parquet", persist_directory=persist_directory)
-                self._client = chromadb.Client(settings)
+                chroma_settings = ChromaSettings(
+                    chroma_db_impl="duckdb+parquet", 
+                    persist_directory=persist_directory
+                )
+                self._client = chromadb.Client(chroma_settings)
             else:
                 # Default in-memory client
                 self._client = chromadb.Client()
@@ -42,9 +51,10 @@ class ChromaClient:
             raise RuntimeError("Chromadb client is not initialized")
 
         try:
+            collection_name = name or getattr(settings, 'CHROMA_COLLECTION', 'lmforge_collection')
             if create_if_missing:
-                return self._client.get_or_create_collection(name)
-            return self._client.get_collection(name)
+                return self._client.get_or_create_collection(collection_name)
+            return self._client.get_collection(collection_name)
         except Exception as e:
             logger.error(f"Error getting chroma collection '{name}': {e}")
             return None
@@ -86,7 +96,11 @@ class ChromaClient:
             return None
 
         try:
-            result = coll.query(embedding=embedding, n_results=top_k, include=['metadatas', 'documents', 'distances', 'ids'])
+            result = coll.query(
+                embedding=embedding, 
+                n_results=top_k, 
+                include=['metadatas', 'documents', 'distances', 'ids']
+            )
             return result
         except Exception as e:
             logger.error(f"Chroma query error: {e}")

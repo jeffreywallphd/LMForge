@@ -13,7 +13,9 @@ from .views.dataset_workflow import dataset_workflow_view, dataset_workflow_docu
 from .views.rag_chat import (
     rag_chat_view, rag_upload_pdf, rag_process_json, rag_send_message,
     rag_get_chunks, rag_embed_and_store, rag_status, rag_chat_history,
-    health_status_concurrent, health_check
+    health_check, create_chat_session,
+    initialize_database_action, initialize_knowledge_base_action,
+    clear_chat_history, clear_database, clear_knowledge_base, get_knowledge_base_details
 )
 from django.conf import settings
 from django.conf.urls.static import static
@@ -54,19 +56,19 @@ urlpatterns = [
     path('delete_document/<int:document_id>/<path:redirect_url>', delete_document, name='delete_document'),
     path('delete_document_mul/', delete_document_mul, name='delete_document_mul'),
 
-    # Health checks for rag Rag-chat
-    path('health/', health_check, name='health-check'),
-    path('health_concurrent/', health_status_concurrent, name='health-concurrent'),
 
-    # RAG Chat URLs - Main Interface
+    # RAG Chat URLs - Direct Service Integration 
     path('rag_chat_view/', rag_chat_view, name='rag-chat-view'),
     path('rag_upload_pdf/', rag_upload_pdf, name='rag-upload-pdf'),
     path('rag_process_json/', rag_process_json, name='rag-process-json'),
-    path('rag_send_message/', rag_send_message, name='rag-send-message'),
     path('rag_get_chunks/<str:chunking_session_id>/', rag_get_chunks, name='rag-get-chunks'),
     path('rag_embed_and_store/', rag_embed_and_store, name='rag-embed-and-store'),
-    path('rag_status/', rag_status, name='rag-status'),
-    path('rag_chat_history/<str:session_id>/', rag_chat_history, name='rag-chat-history'),
+    path('initialize_database/', initialize_database_action, name='initialize-database'),
+    path('initialize_knowledge_base/', initialize_knowledge_base_action, name='initialize-knowledge-base'),
+    path('clear-chat/', clear_chat_history, name='clear-chat-history'),
+    path('clear-database/', clear_database, name='clear-database'),
+    path('clear-knowledge-base/', clear_knowledge_base, name='clear-knowledge-base'),
+    path('knowledge-base-details/', get_knowledge_base_details, name='knowledge-base-details'),
 ]
 
 

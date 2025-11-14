@@ -1,13 +1,18 @@
 """
-Dedicated Chunking Service for PDF Processing
+Django-adapted Chunking Service for PDF Processing
 Handles all text chunking operations with word-based recursive semantic algorithm
 """
 import logging
 import time
 import re
 from typing import List, Dict, Any, Optional
-import PyPDF2
 import io
+from django.core.files.uploadedfile import UploadedFile
+
+try:
+    import PyPDF2
+except ImportError:
+    PyPDF2 = None
 
 logger = logging.getLogger(__name__)
 
@@ -19,24 +24,38 @@ class ChunkingService:
     """
     
     def __init__(self):
-        """Initialize chunking service with configuration"""
+        """Initialize chunking service with configuration optimized for speed"""
         # Word-based configuration for fast processing
         self.target_words = 200  # ~1000 characters
         self.max_words = 300     # ~1500 characters
         self.min_words = 50      # ~250 characters
         self.overlap_words = 30  # ~150 characters overlap
+        self.batch_size = 25  # Process 1000 paragraphs at a time
         
-        logger.info("ChunkingService initialized with word-based configuration")
-        logger.info(f"  Target: {self.target_words} words, Max: {self.max_words}, Min: {self.min_words}")
+        logger.info("ChunkingService initialized with optimized word-based configuration")
+        logger.info(f"  Target: {self.target_words} words, Max: {self.max_words}, Min: {self.min_words}, Batch: {self.batch_size}")
     
     def extract_text_from_pdf(self, pdf_file) -> tuple[str, int, List[str]]:
         """
         Extract text from a PDF file
-        Returns: (full_text, page_count, page_texts)
+        Args:
+            pdf_file: Django UploadedFile or file-like object
+        Returns: 
+            tuple: (full_text, page_count, page_texts)
         """
+        if PyPDF2 is None:
+            raise ImportError("PyPDF2 is required for PDF processing")
+            
         try:
-            # Read PDF file
-            pdf_content = pdf_file.read() if hasattr(pdf_file, 'read') else pdf_file
+            # Handle Django UploadedFile
+            if isinstance(pdf_file, UploadedFile):
+                pdf_content = pdf_file.read()
+                pdf_file.seek(0)  # Reset file pointer for potential reuse
+            elif hasattr(pdf_file, 'read'):
+                pdf_content = pdf_file.read()
+            else:
+                pdf_content = pdf_file  # Assume it's already bytes
+            
             pdf_file_obj = io.BytesIO(pdf_content)
             pdf_reader = PyPDF2.PdfReader(pdf_file_obj)
             
@@ -230,7 +249,7 @@ class ChunkingService:
             max_words = max(c['word_count'] for c in chunks)
             optimal_count = sum(1 for c in chunks if c['is_optimal_size'])
             
-            logger.info(f"✅ Chunking complete in {processing_time:.2f}s: {len(chunks)} chunks")
+            logger.info(f"[SUCCESS] Chunking complete in {processing_time:.2f}s: {len(chunks)} chunks")
             logger.info(f"   Words: avg={avg_words:.1f}, min={min_words}, max={max_words}, target={self.target_words}")
             logger.info(f"   Chars: avg={avg_chars:.1f}, Optimal: {optimal_count}/{len(chunks)} ({optimal_count/len(chunks)*100:.1f}%)")
         else:
@@ -275,7 +294,7 @@ class ChunkingService:
         start_time = time.time()
         
         if filename is None:
-            filename = getattr(pdf_file, 'filename', 'unknown.pdf')
+            filename = getattr(pdf_file, 'name', getattr(pdf_file, 'filename', 'unknown.pdf'))
         
         logger.info(f"Starting PDF chunking pipeline for: {filename}")
         
@@ -363,9 +382,9 @@ class ChunkingService:
         optimal_ratio = optimal_count / len(chunks)
         
         if optimal_ratio >= 0.9:
-            recommendations.append("✅ Excellent chunk distribution - ready for embedding")
+            recommendations.append("[SUCCESS] Excellent chunk distribution - ready for embedding")
         elif optimal_ratio >= 0.7:
-            recommendations.append("✅ Good chunk quality - suitable for RAG")
+            recommendations.append("[SUCCESS] Good chunk quality - suitable for RAG")
         else:
             recommendations.append("⚠️ Some chunks may be suboptimal - consider adjusting parameters")
         

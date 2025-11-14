@@ -241,3 +241,17 @@ LOGGING = {
 
 # Create logs directory if it doesn't exist
 os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
+
+# RAG Services Configuration
+# Use Docker container hostname when OLLAMA_HOST is set (Docker mode)
+OLLAMA_HOST = config('OLLAMA_HOST', default='localhost')
+OLLAMA_URL = config('OLLAMA_URL', default=f'http://{OLLAMA_HOST}:11434')
+OLLAMA_EMBEDDING_MODEL = config('OLLAMA_EMBEDDING_MODEL', default='all-minilm:33m')
+OLLAMA_CHAT_MODEL = config('OLLAMA_CHAT_MODEL', default='qwen2.5:0.5b-instruct')
+
+# ChromaDB Configuration (optional)
+CHROMA_PERSIST_DIR = config('CHROMA_PERSIST_DIR', default=None)
+CHROMA_COLLECTION = config('CHROMA_COLLECTION', default='lmforge_collection')
+
+# Default storage backend (pgvector or chroma)
+DEFAULT_STORAGE_BACKEND = config('DEFAULT_STORAGE_BACKEND', default='pgvector')

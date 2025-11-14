@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg18-trixie
+    container_name: lmforge_postgres
+    environment:
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME}
+    ports:
+      - "${DATABASE_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER} -d ${DATABASE_NAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - lmforge-network
+    restart: unless-stopped
+
+  ollama:
+    build:
+      context: .
+      dockerfile: Dockerfile.ollama-unified
+    container_name: lmforge_ollama
+    ports:
+      - "11434:11434"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Settings
+      - OLLAMA_MAX_LOADED_MODELS=2
+      - OLLAMA_KEEP_ALIVE=5m
+      - OLLAMA_NUM_PARALLEL=4
+      - OLLAMA_MAX_QUEUE=32
+      - OLLAMA_FLASH_ATTENTION=false
+      - OLLAMA_KV_CACHE_TYPE=f16
+      - OLLAMA_GPU_OVERHEAD=0
+      - OLLAMA_LOAD_TIMEOUT=5m
+      - OLLAMA_CONTEXT_LENGTH=1024
+      - OLLAMA_MULTIUSER_CACHE=false
+      - OLLAMA_SCHED_SPREAD=true
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+          memory: 8G
+        limits:
+          memory: 12G
+          cpus: '4.0'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 900s
+    networks:
+      - lmforge-network
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+networks:
+  lmforge-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  ollama_data:

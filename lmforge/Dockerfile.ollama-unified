@@ -1,45 +1,46 @@
-# Unified Ollama Container - Handles both embedding and chat with GPU/CPU fallback
 FROM ollama/ollama:latest
-
-# Install curl for health checks
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
-# Create app directory and ollama data directory
 RUN mkdir -p /app /root/.ollama
-
-# Expose Ollama port
 EXPOSE 11434
 
-# Create optimized startup script with GPU detection and model-specific optimizations
 RUN echo '#!/bin/bash\n\
-echo "Starting Unified Ollama service..."\n\
+echo "Starting Unified Ollama service with GPU/CPU auto-detection..."\n\
 # Detect GPU availability and configure accordingly\n\
 if nvidia-smi >/dev/null 2>&1; then\n\
   echo "GPU detected, enabling GPU acceleration"\n\
   export OLLAMA_GPU_ENABLED=1\n\
-  export OLLAMA_NUM_PARALLEL=6\n\
-  echo "GPU mode: 6 parallel requests for optimal throughput"\n\
+  # Use environment variable or default\n\
+  export OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-6}\n\
+  echo "GPU mode: $OLLAMA_NUM_PARALLEL parallel requests for optimal throughput"\n\
 else\n\
   echo "No GPU detected, using optimized CPU mode"\n\
   export OLLAMA_GPU_ENABLED=0\n\
-  export OLLAMA_NUM_PARALLEL=4\n\
-  echo "CPU mode: 4 parallel requests"\n\
+  # Use environment variable or default\n\
+  export OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}\n\
+  echo "CPU mode: $OLLAMA_NUM_PARALLEL parallel requests"\n\
 fi\n\
-# Model-specific optimizations - CONSERVATIVE for stability\n\
-export OLLAMA_MAX_LOADED_MODELS=1\n\
-export OLLAMA_KEEP_ALIVE=5m\n\
-export OLLAMA_MAX_QUEUE=32\n\
-export OLLAMA_FLASH_ATTENTION=false\n\
-export OLLAMA_KV_CACHE_TYPE=f16\n\
-export OLLAMA_GPU_OVERHEAD=1.0\n\
-export OLLAMA_CONTEXT_LENGTH=1024\n\
-export OLLAMA_MULTIUSER_CACHE=false\n\
-export OLLAMA_SCHED_SPREAD=true\n\
+# Use environment variables from docker-compose with fallbacks\n\
+export OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}\n\
+export OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-5m}\n\
+export OLLAMA_MAX_QUEUE=${OLLAMA_MAX_QUEUE:-32}\n\
+export OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-false}\n\
+export OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE:-f16}\n\
+export OLLAMA_GPU_OVERHEAD=${OLLAMA_GPU_OVERHEAD:-0}\n\
+export OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-1024}\n\
+export OLLAMA_MULTIUSER_CACHE=${OLLAMA_MULTIUSER_CACHE:-false}\n\
+export OLLAMA_SCHED_SPREAD=${OLLAMA_SCHED_SPREAD:-true}\n\
+export OLLAMA_LOAD_TIMEOUT=${OLLAMA_LOAD_TIMEOUT:-5m}\n\
 # Memory and stability settings\n\
 export OLLAMA_HOST=0.0.0.0\n\
 export OLLAMA_ORIGINS="*"\n\
-export OLLAMA_MAX_VRAM=2048\n\
-export OLLAMA_CPU_THREADS=2\n\
+export OLLAMA_MAX_VRAM=${OLLAMA_MAX_VRAM:-2048}\n\
+export OLLAMA_CPU_THREADS=${OLLAMA_CPU_THREADS:-2}\n\
+echo "Configuration:"\n\
+echo "  Max Loaded Models: $OLLAMA_MAX_LOADED_MODELS"\n\
+echo "  Parallel Requests: $OLLAMA_NUM_PARALLEL"\n\
+echo "  GPU Overhead: $OLLAMA_GPU_OVERHEAD"\n\
+echo "  Context Length: $OLLAMA_CONTEXT_LENGTH"\n\
+echo "  Keep Alive: $OLLAMA_KEEP_ALIVE"\n\
 # Start Ollama server\n\
 ollama serve &\n\
 OLLAMA_PID=$!\n\
@@ -87,9 +88,5 @@ echo "Parallel capacity: $OLLAMA_NUM_PARALLEL requests (conservative)"\n\
 wait $OLLAMA_PID\n\
 ' > /app/start.sh && chmod +x /app/start.sh
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-    CMD curl -f http://localhost:11434/api/tags || exit 1
-
-# Use ENTRYPOINT for proper startup
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 CMD curl -f http://localhost:11434/api/tags || exit 1
 ENTRYPOINT ["/app/start.sh"]
