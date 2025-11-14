@@ -114,6 +114,11 @@ def _merge_broken_sentences(text: str) -> str:
     fixed_blocks = []
     
     for block in blocks:
+        # Skip code blocks (contain code fences) - don't merge lines within them
+        if '```' in block:
+            fixed_blocks.append(block)
+            continue
+            
         # Within each block, join lines that don't end with sentence terminators
         # or list markers, and don't start with list markers
         lines = block.split('\n')
@@ -641,7 +646,7 @@ def _detect_code_language(tag, code_text: str) -> str:
         'typescript', 'sql', 'yaml', 'json', 'xml', 'html', 'css', 'php',
         'swift', 'kotlin', 'csharp', 'powershell', 'perl', 'r', 'scala',
         'dart', 'elixir', 'haskell', 'lua', 'matlab', 'objectivec', 'groovy',
-        'fsharp', 'vbnet'
+        'fsharp', 'vbnet', 'asm', 'assembly', 'nasm', 'x86', 'arm'
     }
     
     try:
@@ -659,6 +664,22 @@ def _detect_code_language(tag, code_text: str) -> str:
             # Direct language name as class
             if cls_lower in known_langs or cls_lower in lang_map:
                 return lang_map.get(cls_lower, cls_lower)
+        
+        # Check child <code> if tag is <pre>
+        if tag.name == 'pre':
+            child_code = tag.find('code')
+            if child_code:
+                code_classes = child_code.get('class', [])
+                for cls in code_classes:
+                    cls_lower = cls.lower()
+                    for prefix in ['language-', 'highlight-', 'hljs-', 'lang-', 'brush:']:
+                        if cls_lower.startswith(prefix):
+                            lang = cls_lower[len(prefix):].strip()
+                            normalized = lang_map.get(lang, lang)
+                            if normalized in known_langs or lang in known_langs:
+                                return normalized if normalized in known_langs else lang
+                    if cls_lower in known_langs or cls_lower in lang_map:
+                        return lang_map.get(cls_lower, cls_lower)
         
         # Check parent <pre> if tag is <code>
         if tag.name == 'code':
@@ -1239,15 +1260,19 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
                 # Code block — extract language from sentinel and generate fence
                 try:
                     # Pattern: __FENCE_START__{lang}__\ncode\n__FENCE_END__
-                    start_match = re.match(r"__FENCE_START__(.*?)__", part)
+                    # Trim leading newline from the sentinel part before matching
+                    part_trimmed = part.lstrip('\n')
+                    start_match = re.match(r"__FENCE_START__(.*?)__", part_trimmed)
                     if start_match:
                         lang = start_match.group(1)
                         # Remove sentinel markers
-                        code_body = part.replace(start_match.group(0), "").replace("__FENCE_END__", "")
+                        code_body = part_trimmed.replace(start_match.group(0), "").replace("__FENCE_END__", "")
                         # Generate fence with language hint and proper spacing
                         fence_open = f"```{lang}" if lang else "```"
                         # Ensure blank lines around code fences for proper rendering
-                        code_content = f"\n\n{fence_open}\n{code_body.strip()}\n```\n\n"
+                        # Only strip leading/trailing blank lines, not the final newline before closing fence
+                        code_body = code_body.strip('\n')
+                        code_content = f"\n\n{fence_open}\n{code_body}\n```\n\n"
                         out_parts.append(code_content)
                     else:
                         # Fallback: fully remove prefix pattern __FENCE_START__{lang}__
@@ -1325,6 +1350,32 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
                 body_lines = body_lines[:i]
                 break
     body = '\n'.join(body_lines)
+    
+    # Remove UI chrome elements (browser/app interface text)
+    # These are short standalone lines containing only UI actions/controls
+    # Common in Medium, Chrome reader mode, etc.
+    ui_chrome_patterns = [
+        r'^\s*--\s*$',  # Standalone double dashes
+        r'^\s*Listen\s*$',  # Audio playback control
+        r'^\s*Share\s*$',  # Share button
+        r'^\s*Follow\s*$',  # Follow button
+        r'^\s*Open in app\s*$',  # App prompt
+        r'^\s*Sign [Uu]p\s*$',  # Signup prompt
+        r'^\s*Sign [Ii]n\s*$',  # Signin prompt
+        r'^\s*Get started\s*$',  # CTA button
+    ]
+    body_lines = body.split('\n')
+    # Filter out lines matching UI chrome patterns
+    filtered_lines = []
+    for line in body_lines:
+        is_chrome = False
+        for pattern in ui_chrome_patterns:
+            if re.match(pattern, line, re.IGNORECASE):
+                is_chrome = True
+                break
+        if not is_chrome:
+            filtered_lines.append(line)
+    body = '\n'.join(filtered_lines)
 
     # Phase E: prepend metadata
     meta_lines = []
@@ -1345,6 +1396,11 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     # Last Updated - fallback to publish_date if last_updated not available
     last_updated_value = meta.get('last_updated') or meta.get('publish_date')
     if last_updated_value:
+        # Simplify ISO 8601 timestamps to just YYYY-MM-DD
+        # Convert "2021-03-10T17:15:08.525Z" to "2021-03-10"
+        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', last_updated_value)
+        if date_match:
+            last_updated_value = date_match.group(1)
         meta_lines.append(f"Last Updated: {last_updated_value}")
     else:
         meta_lines.append("Last Updated: N/A")
