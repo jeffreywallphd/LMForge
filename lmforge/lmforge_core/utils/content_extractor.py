@@ -90,6 +90,16 @@ _BAD_LINE_PREFIXES = [
     "- the mayo clinic",  # Catches "- The Mayo Clinic Diet" etc.
 ]
 
+# Processing thresholds and limits
+MAX_HEADING_LENGTH = 80  # Max chars for a line to be considered a heading
+MIN_JUNK_TEXT_LENGTH = 20  # Min chars for text to be considered substantial
+MIN_FORM_CONTENT_LENGTH = 2000  # Forms larger than this are probably page wrappers, not signup forms
+MIN_PARAGRAPH_LENGTH = 200  # Min chars for a paragraph to be substantial
+MIN_LINE_LENGTH_FOR_CONTENT = 50  # Min line length to avoid cutoff heading false positives
+MIN_LINES_FOR_DEDUP = 50  # Min body lines before checking for duplicates
+DUPLICATE_WINDOW_SIZE = 20  # Number of consecutive lines to check for duplication
+SHELL_PROMPT_THRESHOLD = 0.5  # Ratio of shell prompts to lines needed for language detection
+
 
 def _collapse_ws(text: str) -> str:
     if not text:
@@ -138,10 +148,10 @@ def _merge_broken_sentences(text: str) -> str:
                 # Merge if:
                 # - Current line doesn't end with sentence terminator (. ! ? :)
                 # - Next line doesn't start with list marker (- or digit.)
-                # - Current line isn't a heading (heuristic: < 80 chars and no lowercase continuation)
+                # - Current line isn't a heading (heuristic: < MAX_HEADING_LENGTH chars and no lowercase continuation)
                 ends_sentence = current.endswith(('.', '!', '?', ':'))
                 next_is_list = re.match(r'^[-•]\s', next_line) or re.match(r'^\d+\.\s', next_line)
-                current_is_heading = len(current) < 80 and current and not current[-1].islower()
+                current_is_heading = len(current) < MAX_HEADING_LENGTH and current and not current[-1].islower()
                 
                 if not ends_sentence and not next_is_list and not current_is_heading and next_line:
                     # Merge with space
@@ -366,7 +376,7 @@ def _is_trailing_empty_heading(heading_text: str, remaining_elements: list) -> b
         if hasattr(el, 'get_text'):
             text = el.get_text(" ", strip=True)
             # Ignore very short content
-            if len(text) < 20:
+            if len(text) < MIN_JUNK_TEXT_LENGTH:
                 continue
             
             text_lower = text.lower()
@@ -706,9 +716,9 @@ def _detect_code_language(tag, code_text: str) -> str:
             check_count = min(len(lines[:10]), 10)
             
             if check_count > 0:
-                if dollar_count / check_count > 0.5:
+                if dollar_count / check_count > SHELL_PROMPT_THRESHOLD:
                     return 'bash'
-                if powershell_count / check_count > 0.5:
+                if powershell_count / check_count > SHELL_PROMPT_THRESHOLD:
                     return 'powershell'
     except Exception:
         pass
@@ -906,7 +916,7 @@ def _strip_trailing_promotional_headings(lines: list) -> list:
                 break
         else:
             # Non-empty, non-heading line with substantive content
-            if len(line) > 50 and not any(cutoff in line_lower for cutoff in _CUTOFF_HEADINGS):
+            if len(line) > MIN_LINE_LENGTH_FOR_CONTENT and not any(cutoff in line_lower for cutoff in _CUTOFF_HEADINGS):
                 # Stop - this is real content
                 break
     
@@ -993,9 +1003,9 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     for form in list(soup.find_all('form')):
         try:
             form_text_len = _text_len(form)
-            # Only remove small forms (< 2000 chars) - likely signups/search
-            # Large forms (> 2000 chars) are probably page wrappers - unwrap instead
-            if form_text_len < 2000:
+            # Only remove small forms (< MIN_FORM_CONTENT_LENGTH chars) - likely signups/search
+            # Large forms (> MIN_FORM_CONTENT_LENGTH chars) are probably page wrappers - unwrap instead
+            if form_text_len < MIN_FORM_CONTENT_LENGTH:
                 form.decompose()
             else:
                 # Unwrap large forms to preserve their content
@@ -1214,7 +1224,7 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
                 text = text.replace('¶', '').strip()
             # Optionally skip immediate short paragraph after a promotional heading
             if skip_next_short_para and el.name == "p":
-                if len(text) < 200:
+                if len(text) < MIN_PARAGRAPH_LENGTH:
                     skip_next_short_para = False
                     continue
                 # paragraph is substantive; include and clear flag
@@ -1273,17 +1283,13 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
                         # Only strip leading/trailing blank lines, not the final newline before closing fence
                         code_body = code_body.strip('\n')
                         code_content = f"\n\n{fence_open}\n{code_body}\n```\n\n"
-                        out_parts.append(code_content)
                     else:
-                        # Fallback: fully remove prefix pattern __FENCE_START__{lang}__
-                        code_content = re.sub(r"__FENCE_START__[^\n]*?__", "\n\n```\n", part)
-                        code_content = code_content.replace("__FENCE_END__", "\n```\n\n")
-                        out_parts.append(code_content)
+                        raise ValueError("Sentinel pattern not found")
                 except Exception:
-                    # Fallback on error: fully remove prefix pattern
+                    # Fallback: fully remove prefix pattern __FENCE_START__{lang}__
                     code_content = re.sub(r"__FENCE_START__[^\n]*?__", "\n\n```\n", part)
                     code_content = code_content.replace("__FENCE_END__", "\n```\n\n")
-                    out_parts.append(code_content)
+                out_parts.append(code_content)
             else:
                 # Non-code — apply whitespace collapsing
                 out_parts.append(_collapse_ws(part))
@@ -1298,12 +1304,12 @@ def extract_article_content(html_bytes: bytes, url: str) -> dict:
     # Some sites (e.g., Mayo Clinic) have malformed HTML causing content duplication
     # Check for large duplicate sections and remove them
     body_lines = body.split('\n')
-    if len(body_lines) > 50:  # Only check if there's enough content
-        # Look for substantial duplicates (blocks of 20+ consecutive identical lines)
+    if len(body_lines) > MIN_LINES_FOR_DEDUP:  # Only check if there's enough content
+        # Look for substantial duplicates (blocks of DUPLICATE_WINDOW_SIZE+ consecutive identical lines)
         seen_sequences = {}
         duplicate_ranges = []
         
-        window_size = 20  # Check 20-line windows
+        window_size = DUPLICATE_WINDOW_SIZE  # Check N-line windows
         for i in range(len(body_lines) - window_size):
             # Create a signature from this window
             window = tuple(body_lines[i:i+window_size])
