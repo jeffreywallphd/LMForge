@@ -70,3 +70,19 @@ results/
 
 # wandb
 wandb/
+# PyPI configuration file
+.pypirc
+*.pt
+*.safetensors
+articles/
+text_books/
+/articles
+/text_books
+/results
+/sandbox/Cletus/results
+/sandbox/Cletus/labeled_chunks_articles.jsonl
+/sandbox/Cletus/labeled_chunks_text_books.jsonl
+/sandbox/Cletus/classifier_model
+
+
+
