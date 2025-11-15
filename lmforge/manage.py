@@ -93,8 +93,8 @@ def main():
         ) from exc
     
     # Prevents Django's auto-reloader from running if `runserver` is used
-    if "runserver" in sys.argv and "--noreload" not in sys.argv:
-        sys.argv.append("--noreload")
+    # if "runserver" in sys.argv and "--noreload" not in sys.argv:
+    #     sys.argv.append("--noreload")
 
     maybe_auto_update()
 

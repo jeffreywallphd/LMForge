@@ -29,6 +29,26 @@ import transformers
 import re
 from huggingface_hub.utils import LocalTokenNotFoundError
 
+
+# Temp Fix for loading the models. DELETE LATER 
+os.environ["HF_HOME"] = "D:/huggingface_cache" 
+os.environ["TRANSFORMERS_CACHE"] = "D:/huggingface_cache"
+os.environ["HUGGINGFACE_HUB_CACHE"] = "D:/huggingface_cache"
+
+print("HF_HOME:", os.getenv("HF_HOME"))
+print("TRANSFORMERS_CACHE:", os.getenv("TRANSFORMERS_CACHE"))
+print("HUGGINGFACE_HUB_CACHE:", os.getenv("HUGGINGFACE_HUB_CACHE"))
+
+logging.info(f"HF_HOME: {os.getenv('HF_HOME')}")
+logging.info(f"TRANSFORMERS_CACHE: {os.getenv('TRANSFORMERS_CACHE')}")
+logging.info(f"HUGGINGFACE_HUB_CACHE: {os.getenv('HUGGINGFACE_HUB_CACHE')}")
+
+transformers.utils.hub.TRANSFORMERS_CACHE = "D:/huggingface_cache"
+
+# (lazy load)
+MODEL = None
+TOKENIZER = None
+
 # Set up logging
 # Set log file name (in current directory)
 log_file = "application.log"
@@ -50,48 +70,38 @@ DEFAULT_HF_API_KEY = config("HUGGINGFACE_TOKEN", default="")
 # setting huggingface token
 
 def get_model_and_tokenizer():
-    if not DEFAULT_HF_API_KEY:
-        logging.warning("No Hugging Face token found. Skipping login and model loading.")
-        return None, None, device
+    global MODEL, TOKENIZER
+
+    if MODEL is not None and TOKENIZER is not None:
+        return MODEL, TOKENIZER, device  
 
     try:
-        login(token=DEFAULT_HF_API_KEY)
+        model_name = "Qwen/Qwen2.5-7B-Instruct"  
 
-        os.environ["HF_HOME"] = "D:/huggingface_cache" 
-        os.environ["TRANSFORMERS_CACHE"] = "D:/huggingface_cache"
-        os.environ["HUGGINGFACE_HUB_CACHE"] = "D:/huggingface_cache"
-        logging.info("Hugging Face environment variables set.")
+        TOKENIZER = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        if TOKENIZER.pad_token is None:
+            TOKENIZER.pad_token = TOKENIZER.eos_token  
 
-        model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
-
-        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=True)
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token  
-
-        model = AutoModelForCausalLM.from_pretrained(
+        MODEL = AutoModelForCausalLM.from_pretrained(
             model_name,
             torch_dtype=torch.float16,
             device_map="cuda",
-            low_cpu_mem_usage=True,
             trust_remote_code=True
         )
 
-        model.to(device)
-        return model, tokenizer, device
+        MODEL.to(device)
 
-    except LocalTokenNotFoundError:
-        logging.error("Hugging Face token missing. Please configure HUGGINGFACE_TOKEN in .env.")
-        return None, None, device
+        logging.info("Model loaded once and cached in memory.")
+        return MODEL, TOKENIZER, device
+
     except Exception as e:
-        logging.error(f"Unexpected error while loading model: {e}")
+        logging.error(f"Failed to load model: {e}")
         return None, None, device
 
-# Tokenizer function to count tokens in a text
 def count_tokens(text):
-    model, tokenizer, _ = get_model_and_tokenizer()
+    _, tokenizer, _ = get_model_and_tokenizer()
     if not tokenizer:
-        logging.warning("No tokenizer available. Returning approximate token count.")
-        return len(text.split())  # fallback: rough word count
+        return len(text.split())
     return len(tokenizer.encode(text))
 
 
@@ -117,33 +127,23 @@ def split_text(text, max_tokens=1000):
 
     return chunks
 
-def llama_chat(prompt: str, max_tokens: int = 25): 
+def model_chat(prompt: str, max_tokens: int = 25):
     model, tokenizer, _ = get_model_and_tokenizer()
     if not model or not tokenizer:
-        logging.warning("No Hugging Face model loaded. Returning empty response.")
-        return "" 
-    
-    try:
-        tokenizer, model = get_model_and_tokenizer()
-
-        inputs = tokenizer(prompt, return_tensors="pt").to(device)
-        with torch.no_grad():
-            output_tokens = model.generate(
-                **inputs,
-                max_new_tokens=max_tokens,
-                pad_token_id=tokenizer.eos_token_id
-            )
-        generated_tokens = output_tokens[0][len(inputs["input_ids"][0]):]
-        generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
-
-        logging.info(f"Generated text: {generated_text}")
-
-        # Try extracting JSON manually in extract_qa — don't parse here
-        return generated_text
-
-    except Exception as e:
-        logging.error(f"Error in llama_chat: {e}")
         return ""
+
+    inputs = tokenizer(prompt, return_tensors="pt").to(device)
+    with torch.no_grad():
+        output_tokens = model.generate(
+            **inputs,
+            max_new_tokens=max_tokens,
+            pad_token_id=tokenizer.eos_token_id
+        )
+
+    generated_tokens = output_tokens[0][len(inputs["input_ids"][0]):]
+    generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+    return generated_text
+
 
 def build_prompt(chunk, questions_num, instruction_prompt=""):
     instruction_part = f''', "instruction": "{instruction_prompt.strip()}"''' if instruction_prompt else ""
@@ -176,7 +176,7 @@ def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt=""):
         logging.info(f"Processing chunk {i+1}/{total_chunks}")
 
         strict_prompt = build_prompt(chunk, questions_num, instruction_prompt)
-        model_output = llama_chat(strict_prompt, max_tokens=256)
+        model_output = model_chat(strict_prompt, max_tokens=256)
 
         # Try to extract JSON list
         match = re.search(r'\[\s*{.*?}\s*\]', model_output, re.DOTALL)
