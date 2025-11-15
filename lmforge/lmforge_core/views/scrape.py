@@ -1,18 +1,14 @@
-# --- Merged Imports ---
-# Imports from 'Temp' (original)
 from django.views import View
 from django.http import StreamingHttpResponse, HttpRequest, HttpResponse
 from urllib.parse import urlparse
 import time
 import re
 
-# Imports from 'FALL2025_...' (updates)
 from rest_framework.views import APIView
 from rest_framework.request import Request
 import logging
 from typing import Dict, Any
 
-# Common/Shared Imports
 from rest_framework.response import Response
 from rest_framework import status
 import requests
@@ -25,15 +21,12 @@ from ..models.scraped_data import ScrapedData  # Import the model to save data
 import pdfplumber
 import markdown
 
-# --- Imports from 'FALL2025_...' (updates) ---
 from ..utils.content_extractor import extract_article_content
 logger = logging.getLogger(__name__)
-# Constants
 MAX_TITLE_LENGTH = 100  # Maximum length for ScrapedData title field
 MAX_URL_TITLE_LENGTH = 95  # Maximum length when using URL as title (leave room for "scraped")
 
 
-# --- Helper Function from 'Temp' (original) ---
 def remove_emojis(text):
     """
     Removes emojis and other 4-byte characters from a string.
@@ -54,9 +47,6 @@ def remove_emojis(text):
     )
     return emoji_pattern.sub(r"", text)
 
-# --- Merged ScrapeDataView ---
-# This view keeps the streaming structure from 'Temp'
-# but uses the improved generic scraping logic from 'FALL2025_...'.
 class ScrapeDataView(View):
     def stream_scrape_events(self, request):
         """
@@ -64,7 +54,6 @@ class ScrapeDataView(View):
         (Structure from 'Temp')
         """
         url = request.GET.get('url')
-        # 'title' is now fetched with a default, like in 'FALL2025_...'
         title = request.GET.get('title', '') 
         source_type = request.GET.get('source_type')
 
@@ -78,13 +67,11 @@ class ScrapeDataView(View):
             return
 
         try:
-            # --- Initial Progress Update ---
             yield send_event('progress', {'message': f"Connecting to {url}..."})
 
             content = None
             file_type = None
 
-            # --- Reddit Scraper (Kept from 'Temp') ---
             if source_type == 'reddit':
                 parsed_url = urlparse(url)
                 api_url = url.rstrip('/') + ".json"
@@ -175,7 +162,6 @@ class ScrapeDataView(View):
                     yield send_event('error', {'message': 'Invalid Reddit URL.'})
                     return
             
-            # --- Generic URL Scraper (Logic from 'FALL2025_...') ---
             else:
                 yield send_event('progress', {'message': 'Scraping generic URL...'})
                 
@@ -189,31 +175,26 @@ class ScrapeDataView(View):
 
                 content_type: str = response.headers.get("content-type", "").lower()
 
-                # JSON
                 if "application/json" in content_type or (response.text and response.text.strip().startswith("{")):
                     yield send_event('progress', {'message': 'Parsing JSON...'})
                     content = json.dumps(response.json(), indent=2)
                     file_type = "json"
 
-                # XML-ish
                 elif any(x in content_type for x in ("application/xml", "text/xml", "application/rss+xml")):
                     yield send_event('progress', {'message': 'Parsing XML/RSS...'})
                     content = response.text
                     file_type = "xml"
 
-                # Plain text
                 elif "text/plain" in content_type:
                     yield send_event('progress', {'message': 'Parsing plain text...'})
                     content = response.text
                     file_type = "text"
 
-                # CSV
                 elif "text/csv" in content_type or url.lower().endswith(".csv"):
                     yield send_event('progress', {'message': 'Parsing CSV...'})
                     content = response.text
                     file_type = "csv"
 
-                # XLSX / Excel
                 elif any(x in content_type for x in ("excel", "spreadsheetml", "vnd.openxmlformats")) or url.lower().endswith(".xlsx"):
                     yield send_event('progress', {'message': 'Parsing Excel (XLSX)...'})
                     try:
@@ -230,14 +211,12 @@ class ScrapeDataView(View):
                         yield send_event('error', {'message': "Failed to parse xlsx file"})
                         return
                 
-                # HTML (using the new 'extractor' logic from 'FALL2025_...')
                 else:
                     yield send_event('progress', {'message': 'Parsing HTML...'})
                     try:
                         result: Dict[str, Any] = extract_article_content(response.content, url)
                         content = result.get("body", "") or ""
 
-                        # If extractor returned an empty body, fall back to simple parsing
                         if not content.strip():
                             logger.info("Extractor returned empty body for %s; falling back to simple HTML parsing", url)
                             soup = BeautifulSoup(response.content, "html.parser")
@@ -249,11 +228,10 @@ class ScrapeDataView(View):
                                 text = body.get_text("\n\n", strip=True) if body else soup.get_text("\n\n", strip=True)
                             content = text
 
-                        # If user did not provide a title, prefer the extracted one
                         if not title or not title.strip():
                             extracted_title = result.get("title") or ""
                             if extracted_title:
-                                title = extracted_title # 'title' var is updated
+                                title = extracted_title 
                         file_type = "html"
                     except Exception as e:
                         logger.exception("Extractor failed, falling back to simple HTML parsing: %s", e)
@@ -268,13 +246,11 @@ class ScrapeDataView(View):
                         file_type = "html"
 
 
-            # --- Save to DB and send final result (Merged logic) ---
             yield send_event('progress', {'message': 'Scraping complete. Saving to database...'})
             
             # Use emoji remover from 'Temp'
             cleaned_content = remove_emojis(content)
 
-            # Use title logic from 'FALL2025_...'
             # Use provided title, or extracted title, or fallback to URL
             final_title = title or (url[:MAX_URL_TITLE_LENGTH] if url else "scraped")
             
@@ -282,8 +258,6 @@ class ScrapeDataView(View):
                 url=url,
                 file_type=file_type,
                 content=cleaned_content,
-                # 'binary_content' field from 'Temp' is removed, 
-                # as 'FALL2025_' logic parses XLSX to text
                 title=final_title[:MAX_TITLE_LENGTH] # Ensure max length
             )
 
@@ -309,7 +283,6 @@ class ScrapeDataView(View):
         response['Cache-Control'] = 'no-cache'
         return response
 
-# --- UploadPDFView (Replaced with 'FALL2025_...' version) ---
 class UploadPDFView(APIView):
     """Upload a PDF and convert it to text/html/json as requested."""
 
@@ -332,7 +305,6 @@ class UploadPDFView(APIView):
                 content = markdown.markdown(text)
                 file_type = "html"
             elif output_format == "json":
-                # Using the cleaner JSON format from 'FALL2025_...'
                 content = json.dumps({"text": text}, indent=2)
                 file_type = "json"
             else: # Default to text
@@ -343,7 +315,6 @@ class UploadPDFView(APIView):
                 url="uploaded_pdf", # Use placeholder URL
                 file_type=file_type,
                 content=content,
-                # pdf_file=pdf_file, # Uncomment if your model has this field
                 title=title[:MAX_TITLE_LENGTH]
             )
         except Exception as e:
@@ -358,15 +329,12 @@ class UploadPDFView(APIView):
             "content": scraped_record.content
         }, status=status.HTTP_200_OK)
 
-# --- scrape_view (Replaced with 'FALL2025_...' version) ---
 def scrape_view(request: HttpRequest) -> HttpResponse:
     """Render the scrape view with the latest scraped data."""
     latest: ScrapedData | None = ScrapedData.objects.order_by("-created_at").first()
-    # Using 'latest_scraped_data' as the context key to match your 'Temp' branch's template
     return render(request, "scrape.html", {"latest_scraped_data": latest})
 
 
-# --- SaveManualTextView (Replaced with 'FALL2025_...' version) ---
 class SaveManualTextView(APIView):
     """Save manually entered text to ScrapedData."""
     
@@ -386,7 +354,6 @@ class SaveManualTextView(APIView):
             logger.exception("Failed to save manual text: %s", e)
             return Response({"error": "Failed to save text"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-        # Modified to return content, similar to 'Temp'
         return Response({
             "success": "Text saved", 
             "id": scraped_record.id, 
