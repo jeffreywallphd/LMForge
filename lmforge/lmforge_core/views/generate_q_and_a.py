@@ -62,7 +62,7 @@ def get_model_and_tokenizer():
         os.environ["HUGGINGFACE_HUB_CACHE"] = "D:/huggingface_cache"
         logging.info("Hugging Face environment variables set.")
 
-        model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
+        model_name = "#"
 
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=True)
         if tokenizer.pad_token is None:
