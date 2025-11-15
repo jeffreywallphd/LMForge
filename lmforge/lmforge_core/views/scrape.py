@@ -263,7 +263,7 @@ class ScrapeDataView(View):
                             text = article.get_text("\n\n", strip=True)
                         else:
                             body = soup.body
-                            text = body.get_text("\n\n", strip=True) if body else soup.get_text("\n\n", strip_True)
+                            text = body.get_text("\n\n", strip=True) if body else soup.get_text("\n\n", strip=True)
                         content = text
                         file_type = "html"
 
