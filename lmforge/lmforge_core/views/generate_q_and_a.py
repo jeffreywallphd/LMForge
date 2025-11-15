@@ -76,7 +76,7 @@ def get_model_and_tokenizer():
         return MODEL, TOKENIZER, device  
 
     try:
-        model_name = "Qwen/Qwen2.5-7B-Instruct"  
+        model_name = "#"  
 
         TOKENIZER = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
         if TOKENIZER.pad_token is None:
