@@ -26,6 +26,7 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
@@ -181,6 +182,11 @@ text_books/
 /sandbox/Cletus/labeled_chunks_articles.jsonl
 /sandbox/Cletus/labeled_chunks_text_books.jsonl
 /sandbox/Cletus/classifier_model
-
+/sandbox/Cletus/classifier_tokenizer
+/sandbox/Cletus/summarizer_model
+/sandbox/Cletus/summarizer_tokenizer
+/sandbox/Cletus/retriever_model
+/sandbox/Cletus/huggingface_cache/
+huggingface_cache/
 
 
