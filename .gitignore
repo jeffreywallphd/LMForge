@@ -70,3 +70,6 @@ results/
 
 # wandb
 wandb/
+
+#cache 
+__pycache__/
