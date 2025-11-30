@@ -188,5 +188,4 @@ text_books/
 /sandbox/Cletus/retriever_model
 /sandbox/Cletus/huggingface_cache/
 huggingface_cache/
-
-
+*.npy
