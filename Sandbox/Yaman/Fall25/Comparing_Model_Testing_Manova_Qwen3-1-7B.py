@@ -36,7 +36,7 @@ logging.info(f"Run ID: {run_id}")
 
 
 # setting huggingface token
-login(token=os.getenv("#"))
+# login(token=os.getenv("#"))
 
 # os.environ["HF_HOME"] = "D:/huggingface_cache" 
 # os.environ["TRANSFORMERS_CACHE"] = "D:/huggingface_cache"
