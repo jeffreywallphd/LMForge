@@ -21,7 +21,7 @@ import csv
 from huggingface_hub import HfApi
 from datasets import Dataset
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification
 import os
 import logging
 from huggingface_hub import login
@@ -48,6 +48,10 @@ transformers.utils.hub.TRANSFORMERS_CACHE = "D:/huggingface_cache"
 # (lazy load)
 MODEL = None
 TOKENIZER = None
+
+# Relevance classifier (lazy load) - DeBERTa-large with max_length=256
+CLASSIFIER_MODEL = None
+CLASSIFIER_TOKENIZER = None
 
 # Set up logging
 # Set log file name (in current directory)
@@ -97,6 +101,99 @@ def get_model_and_tokenizer():
     except Exception as e:
         logging.error(f"Failed to load model: {e}")
         return None, None, device
+
+def get_classifier_model():
+    """Load the DeBERTa-large relevance classifier model and tokenizer (trained with max_length=256)."""
+    global CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER
+    
+    if CLASSIFIER_MODEL is not None and CLASSIFIER_TOKENIZER is not None:
+        return CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER
+    
+    try:
+        # Path to your trained DeBERTa-large model (trained with max_length=256)
+        # Try multiple possible paths
+        hf_cache = os.getenv("HF_HOME", "D:/huggingface_cache")
+        possible_paths = [
+            os.path.join(hf_cache, "classification_models", "deberta-large"),
+            os.path.join("Sandbox", "Cletus", "huggingface_cache", "classification_models", "deberta-large"),
+            config("CLASSIFIER_MODEL_PATH", default=""),
+        ]
+        
+        classifier_model_path = None
+        for path in possible_paths:
+            if path and os.path.exists(path):
+                classifier_model_path = path
+                break
+        
+        if not classifier_model_path:
+            raise FileNotFoundError("Could not find DeBERTa-large classifier model. Checked paths: " + str(possible_paths))
+        
+        CLASSIFIER_TOKENIZER = AutoTokenizer.from_pretrained(
+            classifier_model_path,
+            trust_remote_code=True
+        )
+        CLASSIFIER_MODEL = AutoModelForSequenceClassification.from_pretrained(
+            classifier_model_path,
+            trust_remote_code=True
+        )
+        CLASSIFIER_MODEL.to(device)
+        CLASSIFIER_MODEL.eval()
+        
+        logging.info(f"DeBERTa-large relevance classifier loaded from: {classifier_model_path}")
+        return CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER
+    
+    except Exception as e:
+        logging.error(f"Failed to load classifier model: {e}")
+        logging.warning("Classifier not available - all chunks will be processed without filtering")
+        return None, None
+
+def is_chunk_relevant(chunk_text, threshold=0.5):
+    """
+    Check if a text chunk is relevant using the DeBERTa-large classifier.
+    
+    Args:
+        chunk_text: The text chunk to classify
+        threshold: Confidence threshold (default 0.5)
+    
+    Returns:
+        bool: True if relevant, False if not
+    """
+    classifier_model, classifier_tokenizer = get_classifier_model()
+    
+    if classifier_model is None or classifier_tokenizer is None:
+        # If classifier fails to load, default to accepting all chunks
+        logging.warning("Classifier not available, accepting chunk by default")
+        return True
+    
+    try:
+        # Tokenize the chunk with max_length=256 (as trained)
+        inputs = classifier_tokenizer(
+            chunk_text,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
+            max_length=256  # Match training configuration
+        ).to(device)
+        
+        # Get prediction
+        with torch.no_grad():
+            outputs = classifier_model(**inputs)
+            probs = torch.softmax(outputs.logits, dim=1)
+            prediction = torch.argmax(probs, dim=1).item()
+            confidence = probs[0][prediction].item()
+        
+        # prediction == 1 means relevant, prediction == 0 means irrelevant
+        is_relevant = (prediction == 1) and (confidence >= threshold)
+        
+        if not is_relevant:
+            logging.info(f"Chunk filtered out (prediction={prediction}, confidence={confidence:.3f})")
+        
+        return is_relevant
+    
+    except Exception as e:
+        logging.error(f"Error classifying chunk: {e}")
+        # Default to accepting chunk if classification fails
+        return True
 
 def count_tokens(text):
     _, tokenizer, _ = get_model_and_tokenizer()
@@ -167,13 +264,21 @@ Respond with only valid JSON.
 """
 
 
-def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt=""):
+def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt="", use_relevance_filter=True):
     text_chunks = split_text(text, max_tokens=256)  # Adjust as needed
     results = []
     total_chunks = len(text_chunks)
+    filtered_count = 0
 
     for i, chunk in enumerate(text_chunks[:chunk_limit]):
         logging.info(f"Processing chunk {i+1}/{total_chunks}")
+        
+        # Apply relevance filter if enabled
+        if use_relevance_filter:
+            if not is_chunk_relevant(chunk):
+                filtered_count += 1
+                logging.info(f"Chunk {i+1} filtered out as irrelevant")
+                continue
 
         strict_prompt = build_prompt(chunk, questions_num, instruction_prompt)
         model_output = model_chat(strict_prompt, max_tokens=256)
@@ -205,6 +310,8 @@ def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt=""):
         except json.JSONDecodeError as e:
             logging.error(f"JSON Decode Error: {e}\nProblem JSON:\n{json_str}")
 
+    if use_relevance_filter and filtered_count > 0:
+        logging.info(f"Filtered out {filtered_count} irrelevant chunks out of {total_chunks} total chunks")
 
     return json.dumps(results, indent=4)
 
