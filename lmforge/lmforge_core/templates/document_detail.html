@@ -31,17 +31,17 @@
             Number of Questions Per Paragraph
             {{ form.num_questions }}
         </div>
-        
+
+        <div class="col-3">
+            Test type
+            {{ form.test_type }}
+        </div>
     </div>
 
     <div class="row">
         <div class="col-3">
             Instruction Prompt
             {{ form.instruction_prompt }}
-        </div>
-        <div class="col-3">
-            Test type
-            {{ form.test_type }}
         </div>
     </div>
 
@@ -96,7 +96,7 @@
         <p><strong>Combined Text</strong></p>
         {% for document in documents %}
         <p> Document {{ forloop.counter }} </p>
-        <div class="border rounded p-2 mb-3" style="max-height: 200px; overflow-y: auto; background-color: #f8f9fa;">
+        <div class="border rounded p-2 mb-3" style="max-height: 600px; overflow-y: auto; background-color: #f8f9fa;">
             <p>{{ document.content|linebreaks }}</p>
         </div>
         {% endfor %}

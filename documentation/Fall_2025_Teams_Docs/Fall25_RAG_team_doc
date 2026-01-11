@@ -1,0 +1,347 @@
+# Team Documentation for LMForge
+
+## Team Summary & Accomplishments
+
+* **Team Name:** RAG  
+* **Term & Year:** Fall 2025
+
+## Key Challenges
+
+Describe the 2-3 most significant hurdles encountered during your work on LMForge and how your team successfully navigated them.
+
+1. **Challenge 1:** We have the constraints to use (or at least have the option to use) local/free tools. This limits the capabilities of language models used in our workflow significantly in terms of quality and speed.  
+   1. **Resolution:** Developing a solid foundation for free/local models used with the ability to implement a simplified (and less local computing resource-intensive) solution with API keys for paid models.  
+2. **Challenge 2:** Ensuring future teams know our intentions and thought processes.  
+   1. **Resolution:** Data workflow visualization between the teams \+ storage and retrieval.  
+3. **Challenge 3:** Containerization of the entire application may lead to difficulties implementing the features developed during this semester and potentially may limit some future development.  
+   1. **Resolution:** Due to the large memory resources used by the language models, we balanced the challenge by containerizing some features to only use them when needed (full implementation may need some additional work).
+
+## Lessons Learned
+
+Based on your experience, what are the 2-3 most critical takeaways? This could be technical, process-related, or collaborative–what future teams should know.
+
+* **Lesson 1:** Communication \- There was significant difficulty between team members in understanding what we were all specifically working on. Team members would walk away from meetings with a task and return with a different task completed. The tasks given were very general, leading to misunderstandings and overall confusion about what needed to be done specifically. Neither the team leads nor the other team members held each other meaningfully accountable and raised concerns. This was a management issue, and we need to get everyone on the same page, set proper expectations, and stick to them.  
+* **Lesson 2:** We spent multiple sprints learning and doing research without starting implementations. It would be worth limiting initial research, starting some prototyping, and researching more as we go while managing a high-level overview to avoid getting stuck in niches.
+
+## Future Recommendations
+
+This section is paramount for the long-term success of the LMForge project. Provide clear, actionable advice and suggestions for the next iteration of your team’s component and the class structure itself.
+
+### Technical and Development Recommendations
+
+1. **Required Technical Debt Resolution:**   
+   1. **Data Chunking**  
+      1. Chunking knowledge base PDFs (may want to collaborate with scraping/cleaning teams for this)  
+      2. Advanced Chunking: Sentence-window chunking, metadata filtering  
+   2. The quality of knowledge based highly depends on the chunking processed uses. A single structured and highly quality document will enhance the knowledge base than ten low quality documents  
+2. **Proposed Feature Expansions:** Implementing the workflow between the scraping/cleaning/RAG teams  
+   1. Get text chunks from the Web-Scraping features.  
+      2. Parse in a unified format form all the sources  
+   2. Expose model parameters to the end user to have customizable models available  
+      1. User-selectable LLM models  
+      2. More customization is available to the user in terms of specifications and model uses in terms of retrieval augmentation by hyperparameters. Ability to add more advanced models like monitoring, quick search, aggressive search, full search  
+      3. Caching or permanently storing the data entered in the vector database  
+   3. Are there any confusing parts of the UI or workflow that you think future teams should redesign?  
+      1. Work with the scraping and cleaning teams to find ways that the data they gather can be easily used in the RAG database. This part needs to be properly designed between the teams to correctly transfer the data. Regarding design, there are multiple copies of a similar design, which may make it confusing for those who eventually fully implement the UI. Here is the RAG team’s copy of the UI design: [https://www.figma.com/make/dcYtFQygRMtI1Vbq2vDpb9/Anna-s-Testing-Copy-of-LMForge?node-id=0-1\&p=f\&t=0IJZGBhGcrkt8wYJ-0](https://www.figma.com/make/dcYtFQygRMtI1Vbq2vDpb9/Anna-s-Testing-Copy-of-LMForge?node-id=0-1&p=f&t=0IJZGBhGcrkt8wYJ-0) 
+
+## Recommendations for Future AI/ET Classes
+
+### Onboarding and Knowledge Transfer:
+
+* Software setup steps are in one place.  
+  * Go through the documentation on git branch, its extensive and detailed  
+  * While running docker services, keep in mind the configuration of local machine and tune it accordingly.  
+  * Current setup includes only one quality JSON pdf parser. Work on different documents to expand my knowledge base.  
+  * JSON parser for web scraping is dummy that feature can be enhanced
+
+### Teaching & Curriculum Feedback
+
+**Topics covered that were used for team feature**
+
+1. RAG system  
+2. Docker  
+3. Django  
+4. Chunking  
+5. PGVector  
+6. Unit Testing  
+7. Olama client
+
+The subjects taught during lectures were definitely relevant to understanding AI and the concepts behind LMForge. The lectures covered what the topic is, how it works, and why it works, but not really how it is implemented. I wish we had covered in depth what the actual code looks like for the topics we covered.   
+Handover Checklist
+
+- [ ] All documentation and code are pushed to the dev branch of the GitHub repository (make sure to assign a reviewer).
+
+      → We merged the dev branch into our “FALL25\_MIS4000\_5000\_RAG” branch. Since we transitioned from MySQL to using a PostgreSQL database in a container, it would mess with the other team’s code
+
+- [x] ~~ReadMe files are updated on a per-team basis.~~
+
+## Extended Documentation
+
+### Overview
+
+The RAG (Retrieval-Augmented Generation) system is a document-based conversational AI feature that allows users to upload PDFs, process them into semantic chunks, generate embeddings, and chat with an AI that retrieves relevant context from the uploaded documents and its own Knowledge Base
+
+### What went wrong?
+
+- Deploying and testing models in local mode  
+- Finding a generalized chunking scheme that works well with all pdfs.  
+- RAG chat context customization for appropriate results  
+- Team Communication  
+  - Inner team communication:  
+    - Things were sometimes done twice  
+    - Small tasks took multiple sprints due to collaboration and communication struggles  
+- Software setup  
+  - Need specific instructions how to install and run the application (Win, Mac/Linux)  
+    - Creating a virtual environment and basic commands  
+    - What changes need to be made in the requirements.txt file for different architectures (generally)?  
+    - How to set up docker and run it there?
+
+### Architecture
+
+#### Technology Stack
+
+* Backend Framework: Django 4.2.23  
+* Database: PostgreSQL with pgvector extension (vector similarity search)  
+* LLM Service: Ollama (local inference)  
+* Embedding Model: all-minilm:33m (384-dimensional vectors)  
+* Chat Model: qwen2.5:0.5b-instruct  
+* Containerization: Docker Compose
+
+#### System Components
+
+┌─────────────────────────────────────────────────────────────┐
+│                    RAG Chat Frontend                         │
+│              (rag_chat.html - Interactive UI)                │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                  Django Views Layer                          │
+│              (rag_chat.py - Request Handlers)                │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│                   Services Layer                             │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ chat_service.py        - Chat session & RAG logic    │  │
+│  │ chunking_service.py    - Text chunking algorithms    │  │
+│  │ embedding_client.py    - Embedding generation        │  │
+│  │ pdf_processor.py       - PDF extraction & processing │  │
+│  │ rag_database.py        - Vector storage & retrieval  │  │
+│  │ service_health.py      - System health monitoring    │  │
+│  │ rag_initializer.py     - System initialization       │  │
+│  │ rag_vector_initializer - JSON knowledge base setup   │  │
+│  └──────────────────────────────────────────────────────┘  │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────┐
+│              External Services (Docker)                      │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ PostgreSQL + pgvector  - Vector database             │  │
+│  │ Ollama Service         - LLM inference engine        │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+
+#### Core Services
+
+##### Chat Service: 
+
+Manages Chat session, context retrieval, and LLM communication.
+
+**Model: qwen2.5:0.5b-instruct**	
+
+1. Create and manage chat sessions  
+2. Store chat history in PostgreSQL  
+3. Retrieve relevant document context using vector similarity  
+4. Generate RAG-enhanced responses using Ollama  
+5. Batch embedding generation for queries (parallel processing)
+
+##### Chunking service: 
+
+Handles text extraction and semantic chunking. Uses word-based Semantic chunking.
+
+1. Split text by paragraphs (natural boundaries)  
+2. Combine paragraphs to reach target word count  
+3. Split large paragraphs by sentences  
+4. Add overlap between chunks for context continuity
+
+##### Embedding Client: 
+
+Generates vector embeddings using Ollama’s embedding model.
+
+**Model: all-minilm:33m**
+
+1. 384-dimensional vectors  
+2. Optimized for semantic similarity  
+3. 33MB model size  
+4. RAG Database: Handles vector storage and similarity search using PostgreSQL \+ pgvector  
+   1. Bulk inserts (100 rows per batch)  
+   2. IVFFlat index for vector similarity (100 lists)  
+   3. Query hints for optimal execution plans  
+   4. Connection pooling via Django
+
+```sql
+documents (id, document_id, filename, file_size, page_count, session_id, processed, total_chunks, metadata)
+chunks (id, document_id, chunk_index, text_content, embedding vector(384), metadata)
+sessions (id UUID, status, created_at, updated_at)
+conversations (id, session_id, message_type, content, message_index, metadata)
+```
+
+##### PDF Processor: 
+
+Orchestrates PDF processing pipeline
+
+1. Extract text from PDF files (PyPDF2)  
+2. Clean and preprocess text  
+3. Apply recursive semantic chunking  
+4. Generate chunk previews  
+5. Return processing statistics
+
+##### Service Health Monitor: 
+
+Monitor system health and service availability
+
+1. PostgreSQL database (connection, pgvector extension, tables)  
+2. Ollama LLM service (availability, models, GPU/CPU mode)  
+3. Knowledge Base (documents, chunks, embeddings)
+
+##### RAG Initializer: 
+
+System initialization and setup operations.
+
+1. Initialize PostgreSQL tables from init-db.sql  
+2. Setup pgvector extension  
+3. Initialize knowledge base from JSON files  
+4. Handle existing object conflicts gracefully
+
+##### RAG Vector Initializer:
+
+1. Scan media/JSON directory for files  
+2. Extract text chunks from JSON structures  
+3. Generate embeddings in batches (50 chunks/batch)  
+4. Store in database with bulk inserts (100 rows/batch)
+
+#### Docker Services
+
+##### PostgreSQL \+ pgvector: 
+
+**pgvector/pgvector:0.8.1-pg18-trixie**
+
+* pgvector extension for vector operations  
+* IVFFlat indexing for fast similarity search  
+* Automatic initialization from init-db.sql
+
+##### Olama Service: 
+
+**Custom (Dockerfile.ollama-unified)**
+
+* Auto-detect GPU/CPU availability  
+* Pull models in parallel  
+* Warm up models with test requests  
+* Ready for production use
+
+#### UI Design
+
+##### What we did:
+
+We successfully used Figma to design the UI for LMForge.  
+[https://www.figma.com/make/dcYtFQygRMtI1Vbq2vDpb9/Anna-s-Testing-Copy-of-LMForge?node-id=0-1\&p=f\&t=0IJZGBhGcrkt8wYJ-0](https://www.figma.com/make/dcYtFQygRMtI1Vbq2vDpb9/Anna-s-Testing-Copy-of-LMForge?node-id=0-1&p=f&t=0IJZGBhGcrkt8wYJ-0) 
+
+* Settings page designed  
+* PDF upload and chat designed
+
+##### What we didn’t do & struggles:
+
+* UI team used different copies of the figma design, leading to confusion and inconsistency  
+* Full conversion 
+
+##### Future recommendations:
+
+* Figma mockup needs design tweaks because some colors and shapes clash.  
+* Figma mockup needs a design language across all teams
+
+#### User Workflow
+
+##### Upload and Process Documents
+
+1. Select PDF files in upload section  
+2. Choose chunking method (recursive semantic)  
+3. Click "Start Chunking Process"  
+4. Review chunk statistics  
+5. Confirm or proceed to embedding generation
+
+##### Chat with Documents
+
+1. Type question in chat input  
+2. System retrieves top 8 relevant chunks  
+3. LLM generates contextual response  
+4. Response shown with document sources  
+5. Chat history maintained for context
+
+##### Clear chat history
+
+1. All chat messages (ChatMessage model)  
+2. All processed documents (ProcessedDocument model)  
+3. All chat sessions (ChatSession model)  
+4. PostgreSQL conversations table (TRUNCATE)  
+5. PostgreSQL sessions table (TRUNCATE)  
+6. Django session data
+
+#### Configuration
+
+##### Environment Variables
+
+```shell
+# Database
+DATABASE_USER=pdf_rag_user
+DATABASE_PASSWORD=pdf_rag_password
+DATABASE_NAME=pdf_rag_db
+DATABASE_PORT=5435
+
+# Ollama
+OLLAMA_URL=http://localhost:11434
+OLLAMA_CHAT_MODEL=qwen2.5:0.5b-instruct
+OLLAMA_EMBEDDING_MODEL=all-minilm:33m
+
+# Django
+DEBUG=True
+SECRET_KEY=your-secret-key
+```
+
+##### Tuning Parameters
+
+* Embedding batch size (50)  
+* Database batch size (100)  
+* Chunking batch size (1000)  
+* Context chunks (8)  
+* Similarity threshold (0.6)
+
+#### Security Considerations
+
+* CSRF Protection: Enabled for all POST endpoints  
+* Session Management: Django sessions with secure cookies  
+* SQL Injection: Parameterized queries throughout  
+* File Upload: PDF validation and size limits  
+* Access Control: Session-based isolation
+
+#### Quick Start Commands
+
+```shell
+docker build -t# Start services
+docker-compose -f lmforge/docker-compose.services.yaml up -d
+# Run Django server
+cd lmforge
+python manage.py runserver localhost:8000
+# Initialize knowledge base
+python manage.py init_rag_storage --force
+# Stop services
+docker-compose -f lmforge/docker-compose.services.yaml down
+```
+
+#### Future recommendations
+
+- Multi-user Support: User-specific knowledge bases  
+- Document Updates: Incremental updates without full reprocessing  
+- Advanced Chunking: Sentence-window chunking, metadata filtering  
+- Model Selection: User-selectable LLM models  
+- Export Functionality: Export chat sessions, download chunks  
+- Analytics: Query patterns, response quality metrics

@@ -1,0 +1,58 @@
+.chunks-container {
+  margin-top: 30px;
+  background: #fafafa;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.chunks-container h3 {
+  font-weight: 600;
+  margin-bottom: 15px;
+}
+
+.chunk-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.chunk-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: #fff;
+  padding: 15px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  white-space: pre-wrap;  /* Keep original line breaks */
+  word-wrap: break-word;  /* Wrap long words */
+}
+
+.chunk-item:hover {
+  transform: scale(1.01);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.1);
+}
+
+.chunk-index {
+  font-weight: 700;
+  color: #007bff;
+  flex-shrink: 0;
+  min-width: 35px;
+}
+
+.chunk-text {
+  flex-grow: 1;
+  line-height: 1.5;
+  color: #333;
+}
+
+.no-chunks,
+.error {
+  color: #888;
+  font-style: italic;
+  margin-top: 10px;
+}

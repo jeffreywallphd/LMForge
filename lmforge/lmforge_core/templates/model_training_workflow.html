@@ -14,6 +14,9 @@
         <option value="HuggingFaceTB/SmolLM2-360M-Instruct">SmolLM2-360M-Instruct</option>
         <option value="apple/OpenELM-270M-Instruct">apple/OpenELM-270M-Instruct</option>
         <option value="facebook/opt-350m">FACEBOOK-OPT-350M</option>
+        <option value="meta-llama/Llama-3.2-1B-Instruct">meta-llama/Llama-3.2-1B-Instruct</option>
+        <option value="meta-llama/Llama-3.2-3B-Instruct">meta-llama/Llama-3.2-3B-Instruct</option>
+        <option value="google/gemma-2-2b-it">google/gemma-2-2b-it</option>
     </select>
     <br>
 
@@ -32,7 +35,7 @@
     <input type="number" step="0.00001" name="weight_decay" value="0.01">
     <br>
 
-    <label for="gradient_checkpointing">Use Gradient Checkpointing:</label>
+    <label for="gradient_checkpointing">Use Gradient Checkpointing: (Please disable for LORA and QLoRA)</label>
     <input type="checkbox" name="gradient_checkpointing" checked>
     <br>
 
@@ -51,6 +54,13 @@
     <input type="hidden" id="fp16" name="fp16" value="off">
     <input type="hidden" id="bf16" name="bf16" value="off">
     <br>
+
+    <label for="use_lora">Use LoRA:</label>
+    <input type="checkbox" name="use_lora">
+
+    <label for="use_qlora">Use QLoRA (for models ≥1.3B parameters):</label>
+    <input type="checkbox" name="use_qlora">
+
 
     <label for="project_name">W&B Project Name:</label>
     <input type="text" name="project_name" value="your_project_name">
@@ -100,17 +110,24 @@
 <div id="log-container">Waiting for logs...</div>
 
 <script>
+
     let eventSource;
 
     // Precision Handling Logic
-    document.getElementById('fp16').value = 'off';
-    document.getElementById('bf16').value = 'off';
+    const fp16El = document.getElementById('fp16');
+    const bf16El = document.getElementById('bf16');
+    const precisionEl = document.getElementById('precision');
 
-    document.getElementById('precision').addEventListener('change', function () {
-        const precision = this.value;
-        document.getElementById('fp16').value = (precision === 'fp16') ? 'on' : 'off';
-        document.getElementById('bf16').value = (precision === 'bf16') ? 'on' : 'off';
-    });
+    if (fp16El) fp16El.value = 'off';
+    if (bf16El) bf16El.value = 'off';
+
+    if (precisionEl) {
+        precisionEl.addEventListener('change', function () {
+            const precision = this.value;
+            if (fp16El) fp16El.value = (precision === 'fp16') ? 'on' : 'off';
+            if (bf16El) bf16El.value = (precision === 'bf16') ? 'on' : 'off';
+        });
+    }
 
     async function startTraining(event) {
         event.preventDefault();
@@ -142,7 +159,7 @@
                 logContainer.textContent += "✅ Training initiated successfully.\n";
                 trainingInProgress = true;
                 console.log("Training started, enabling stop button");
-                document.getElementById("stopTrainingBtn").disabled = false;
+                // document.getElementById("stopTrainingBtn").disabled = false;
                 
                 await startLogStreaming();
 
@@ -157,11 +174,8 @@
     }
 
     function startLogStreaming() {
-        const logContainer = document.getElementById("log-container");
-        if (eventSource) {
-            eventSource.close();
-        }
-
+        if (eventSource) eventSource.close();
+        logContainer = document.getElementById("log-container");
         eventSource = new EventSource("/api/stream_training/");
 
         return new Promise((resolve) => {
@@ -206,8 +220,7 @@
         const resultContainer = document.getElementById("last-four-model-stats");
         const datasetName = document.getElementById("dataset_name").value.trim();
         const modelName = document.getElementById("model_name").value.trim();
-
-        if (!datasetName && !modelName) {
+        if (!datasetName && !modelName ) {
             alert("Please enter either a dataset name, a model name, or both to fetch statistics!");
             return;
         }
@@ -303,6 +316,8 @@
     window.location.href = url;
     }
 
+    fetchLastFourModelStats();
+   
 </script>
 
 {% endblock %}

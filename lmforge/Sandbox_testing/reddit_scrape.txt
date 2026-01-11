@@ -1,0 +1,432 @@
+Scraped Posts from r/ChevroletSilverado:
+========================================
+
+
+--- POST 1: Help hard wiring a dash cam (by u/LadyAtrox60) ---
+Title: Help hard wiring a dash cam
+Author: u/LadyAtrox60
+--- POST CONTENT ---
+My dash cam hardwire kit has a low voltage protection thingy. So, I can set it to cut off the camera when it reaches that voltage. So, can someone please point out where the red wire goes for 24 hr mode, and where the yellow wire goes?
+
+(My son is a master electrician. But he's in Alaska. 😔)
+
+TIA
+
+--- COMMENTS ---
+
+> u/thebluelunarmonkey:
+yellow = constant memory ?  
+red = switched power?  
+going off that...otherwise swap red/yellow i mention below.  
+  
+2014ish year. See the 50A bottom left? You can plug a common size female spade connector on the metal terminal below the fuse, since in the current position, the 50A fuse is set to be constant +12V.  RED - switched power
+
+Connect YELLOW via piggy back to **spare**, just about dead center, the wider **blue 15A fuse** with a red fuse below it and 4 red fuses above it. should be constant power. easier to tap that ok school size fuse than those tiny mini fuses. You can also plug a male spade into either the top or bottom slot on that fuse socket on the center far right (where a fuse the size of the 50A would go)... one slot will be constant +12 ... but you'll not have any fuse protection like you would tapping that 15A
+
+for YELLOW you still need to use a multmeter or noid light to make sure the fuse prong you are connecting the piggyback fuse tap shows 0/no voltage so that circuit is fuse protected from a short on the wire leading to the dashcam.
+
+
+
+--- POST 2: Rhino liner (by u/Muted-Rip-2614) ---
+Title: Rhino liner
+Author: u/Muted-Rip-2614
+--- POST CONTENT ---
+Is it easy enough to DIY at home?
+
+--- COMMENTS ---
+
+> u/homebrewneuralyzer:
+lol. Go ahead.
+
+
+> u/[deleted]:
+I used the Raptor spray on kit that Amazon sells. Applied it 7 years ago and it is still almost perfect. I put i scratch in it dragging an 800lb loaded pallet that had a nail poking out of it. Other than that no chips no peel. Proper prep with the nylon bristle cup you use on a grinder is clutch though.
+
+
+> u/CSamsel:
+Roll on stuff works amazing.  Make sure surface is clean and 'scuffed' properly and it'll last a lifetime.
+
+
+
+--- POST 3: 2019 Silverado shake (by u/locogringo954) ---
+Title: 2019 Silverado shake
+Author: u/locogringo954
+--- POST CONTENT ---
+Silverado LD  shake. I feel it in the seat, wheels properly inflated and balanced,  alignment checked. Any advice on next move ?
+
+--- COMMENTS ---
+
+> u/ConstantIll6605:
+Try L5 with the 6 speed.
+
+
+
+--- POST 4: Auto Stop (by u/Muted-Rip-2614) ---
+Title: Auto Stop
+Author: u/Muted-Rip-2614
+--- POST CONTENT ---
+Is there any way to turn off the auto stop feature permanently on a 2022 Silverado?
+
+--- COMMENTS ---
+
+> u/si7h_:
+You might be able to do it through a tuner if they could access your ECM and reflash your ride. Just a thought.
+
+
+
+--- POST 5: Can I get some love? (by u/LadyAtrox60) ---
+Title: Can I get some love?
+Author: u/LadyAtrox60
+--- POST CONTENT ---
+I am a 64(F) bowtie till I die lady. From my first cars, a '70 1/2 Camaro and a '72 Chevelle to my current 2017 Silverado, the bowtie has never let ne down.. 
+
+Five years ago, my oldest son moved to Durango, Colorado, opened his own business (master electrician) and bought a, GASP, Tundra. I've just come to terms with that. Last night, my youngest, plagued with the transmission issues in his 2017 Silverado, went out and bought a, OMG NO, Tundra.
+
+Where did I go wrong? Why did my beloved sons go astray? Rhetorical questions, I really just need some virtual hugs and for the Chevy community to commiserate. 
+
+💔
+
+--- COMMENTS ---
+
+> u/Wise1k:
+Don’t take it personally, the next generations seem to love Toyota.  When my son was shopping for his first new car he considered Toyota.  I told him what my Dad told me, if you buy it you won’t be parking it in my driveway.  He passed in it.
+
+
+
+--- POST 6: Spare tire (by u/Tough-Environment622) ---
+Title: Spare tire
+Author: u/Tough-Environment622
+--- POST CONTENT ---
+Just 1st flat on my new truck and  was surprised to find an 18" spare when it truck camp with 20 " tires. New truck 2025 Silverado Z71 2500HD LTZ Texas Edition . It has been 20 + years since my last 4 wheel drive. I thought using different size tires caused problems and should not be driven on. Any thoughts?
+
+--- COMMENTS ---
+
+> u/stone-lions:
+I’m not aware of any problems. The smaller will would have on the vehicle, except tread wear. 
+However, I found the same issue on my 2021 Silverado not happy about it either.
+
+
+
+--- POST 7: Help (by u/YungSavage8757) ---
+Title: Help
+Author: u/YungSavage8757
+--- POST CONTENT ---
+I have an LT 03 Silverado and I just got some tow mirrors with the lights but my truck doesn’t have the plugs for it so I need to run my own wires. Is there any way to do this easier without having to run all the way to the fuse box like simply splicing a wire somewhere closer? I just want my blinkers to work don’t care much for running lights but wouldn’t hurt to have them also
+
+--- COMMENTS ---
+
+> u/_Forsaken_Durzo:
+You can try to tie into the wires running to your turn signals.
+
+
+> u/Proper-Salad158:
+Check Boost Auto Parts. They may have a harness that will work.
+
+
+> u/Sixsean7:
+Real question is howd u get yer truck stuck on that wall - and its STAYING there. Whoa.
+
+
+
+--- POST 8: Would you recommend these? (by u/t4rgetgummisharks) ---
+Title: Would you recommend these?
+Author: u/t4rgetgummisharks
+--- POST CONTENT ---
+My head unit glitches and does things on its own except for the bottom left corner, the whole screen is unresponsive. I wanna replace it and am thinking of buying this since I saw it on YouTube. The brand is ainavi and there are lots of versions of it but the same product. Any thoughts is appreciated. (2017 Silverado 1500 crew cab)
+
+--- COMMENTS ---
+
+> u/hunterxy:
+So youre asking for advice on an item, but youre not even gonna link the item? Bold move.
+
+
+> u/EntertainmentSad2472:
+You may consider this T-Style radio,
+
+[https://www.youtube.com/watch?v=5H-vGsbtnFw](https://www.youtube.com/watch?v=5H-vGsbtnFw)
+
+
+> u/ImDaProfit:
+Yes they are great. I have a similar one in my car.  The only thing is you have to use your phones Hotspot for any of the extras to work. Ie youtube, Netflix.
+
+
+
+--- POST 9: Electric windows.  (by u/DKlurifax) ---
+Title: Electric windows. 
+Author: u/DKlurifax
+--- POST CONTENT ---
+Hello. 
+
+First of all, English is not my native language so apologies in advance if I am difficult to understand. 
+
+Me and my friend recently bought an old chevrolet silverado K2500 from 1995. (6.5 Ltr td) and we are struggling to figure out how the electric windows are working. 
+
+We ordered a haynes manual, but it'll take a week or two to arrive (I'm from Denmark I'm Europe) and being impatient I thought I'd try and ask here. 🙏
+
+
+I have two wires to the electric motor but it can only close and not open the window. How does it work, does it simply flip the polarity to the motor? In that case it would seem to be a faulty switch, but measuring with an ohm meter I get connection in both directions. 
+
+Applying 12v directly to the motor turns it, in both directions depending of polarity.
+
+Could it be a faulty switch? 
+
+It can close the window from both passenger and drivers switches but not open it from either of the switches. 
+
+Hope anyone can point me in the right direction. 🙏
+
+--- COMMENTS ---
+
+
+--- POST 10: Question  (by u/shootnjohn) ---
+Title: Question 
+Author: u/shootnjohn
+--- POST CONTENT ---
+We recently bought a 2024 Silverado crew cab, blacked out version and we love it. I put in a bed mat, weather tech floor matts and window louvers and of course the three section hard bed cover. 
+
+My question is this. The tailgate release appears to be an electrical vs strictly mechanical function. If the bed cover is locked in place and the battery were to go dead or just a malfunction of the opening operation, how would I get the tailgate down? TIA
+
+--- COMMENTS ---
+
+> u/Duramax-Juan44:
+I’m not sure but I think you would have to get a new battery or jumpstart it or get power to open the tailgate because it’s mostly electric but what tailgate do you have
+
+
+> u/ponderdis:
+What was the out the door price and trim level/options you purchased?
+
+
+
+--- POST 11: Oh, 2021 HD will still have a front bench seat but similar!!!😂 (by u/Revolutionary-Ant696) ---
+Title: Oh, 2021 HD will still have a front bench seat but similar!!!😂
+Author: u/Revolutionary-Ant696
+--- POST CONTENT ---
+Ohhhhhhh I thought it was discontinued!!😞
+
+--- COMMENTS ---
+
+
+--- POST 12: Chevrolet OnStar issues. (by u/Westwood1985) ---
+Title: Chevrolet OnStar issues.
+Author: u/Westwood1985
+--- POST CONTENT ---
+Hi, my wife just purchased a 2016 chevrolet Silverado 1500 and it has OnStar in it. The issue is, OnStar sucks. The navigation (turn by turn) isn't appealing, we don't like it. Is there a way to get an actual map view or normal navigation or is there a way to disable OnStar and install Chevrolet mylink or something. When I start the truck the screen says "MyLink" then the screen shows icons for OnStar, Pandora, settings and navigation. If I hit the navigation button it just tells me to press the blue OnStar button to get directions sent to the truck screen which then just shows turn by turn instructions. It's a horrible system and seems crazy to me that that's all there is.
+
+Thanks In advance
+
+--- COMMENTS ---
+
+> u/ajb39oh:
+You have to have the radio with navigation built in to see a map. Otherwise, it’s turn by turn directions.
+
+
+> u/Jturnism:
+I'd recommend just getting a 3rd party radio, with support for Android Auto or Apple Car Play
+
+
+> u/ajb39oh:
+Upgrading may be a dealer thing.  You may be able to get one with Nav, and Android auto together. Those trucks used those radios from 2014-2019.
+
+
+> u/mrzoozilla:
+That means your car wasnt built with the on screen gps in mind (some people do that idk why)
+The only way you can have a standard gps on the screen would be to go to a dealership so they can install one
+
+It’s an actual piece they have to install in your car, it’s not just a switch that gets flipped and it’s there
+
+
+> u/[deleted]:
+It is horrible. My onstar hasn’t worked since I bought my 15, but they tried to get me to subscribe anyway. I spent a couple of hours on the phone trying to trouble shoot it and it just won’t connect. They still were trying to pressure me into paying for it. I told them if they wanted me to pay for their service they could pay for the repair. I bought it from an individual so there was no warranty and I just don’t care enough about it to mess with it.
+
+
+
+--- POST 13: cooling system question on 2004 silverado z71 5.2L engine (by u/jamesdal1) ---
+Title: cooling system question on 2004 silverado z71 5.2L engine
+Author: u/jamesdal1
+--- POST CONTENT ---
+I'm at a loss here. My truck wasn't really heating up, but it usually runs at 205. But when stopped or parked, it would go to 210 and the AC wouldn't get as cold.  As soon as I start driving again, it goes back down to 205 and the AC gets cold again. So I did the following:
+
+1. Replaced fan clutch fan
+2. Replaced the water pump
+3. replaced the thermostat
+4. and replaced a busted hose.
+5. new anti-freeze.
+
+So, my truck now stays at 205 even when parked or at stop light, BUT the AC isn't as cold when stopped. As soon as I take off, it gets cold, in fact, very cold. I had it checked and all checked out. FreeOn is where it's suppose to be at.  I had the AC repaired about a year ago, new compressor and new plug installed on the line.
+
+What am I missing? the radiator? that's the only thing I haven't replaced.
+
+Anything I'm missing?
+
+--- COMMENTS ---
+
+> u/Boone74:
+A/C not cold at a stop is a symptom of high side pressure going high usually because of insufficient airflow through the condenser. I’d pull the radiator and clean the crap in between the radiator and condenser.
+
+
+
+--- POST 14: Wiring harness troubleshooting. 2006 chevy silverado 4.8 no steering controls. I need help finding out what wires are what, I'm installing a double din touchscreen radio but the screen wont turn on. (by u/yojak1) ---
+Title: Wiring harness troubleshooting. 2006 chevy silverado 4.8 no steering controls. I need help finding out what wires are what, I'm installing a double din touchscreen radio but the screen wont turn on.
+Author: u/yojak1
+--- POST CONTENT ---
+
+
+--- COMMENTS ---
+
+> u/[deleted]:
+i bought the kit from oreilleys for 90 bucks and now my radio wont shut off
+
+
+
+--- POST 15: 2019 Deadpool Silverado (by u/theboss2161) ---
+Title: 2019 Deadpool Silverado
+Author: u/theboss2161
+--- POST CONTENT ---
+
+
+--- COMMENTS ---
+
+> u/OrionResident:
+Did you encounter any issues with this model so far?
+
+
+
+--- POST 16: Deadpool Silverado! (by u/theboss2161) ---
+Title: Deadpool Silverado!
+Author: u/theboss2161
+--- POST CONTENT ---
+
+
+--- COMMENTS ---
+
+> u/OrionResident:
+I'm looking for a truck and i really like the 2019 model. Is there any issues with it
+
+
+> u/Carl_LA_Tuning:
+Beautiful what’s your bedcover?[Tessera4x4](https://tessera4x4usa.com)
+
+
+> u/glockman_03:
+This is pretty cool!
+
+
+> u/glockman_03:
+Definitely like that red on the CHEVROLET.
+
+
+
+--- POST 17: Question about fitment (by u/HugeHamster4) ---
+Title: Question about fitment
+Author: u/HugeHamster4
+--- POST CONTENT ---
+I have a 2009 chevy silverado with a 4.75 inch suspension lift on it and I was just wondering if that should be enough to clear 22x12 rims with a -51 mm. offset with 35s?
+
+--- COMMENTS ---
+
+
+--- POST 18: Saw a narco truck at the junkyard (by u/TITO_PROJECTS29) ---
+Title: Saw a narco truck at the junkyard
+Author: u/TITO_PROJECTS29
+--- POST CONTENT ---
+
+
+--- COMMENTS ---
+
+> u/TITO_PROJECTS29:
+Check out the new video https://youtu.be/QkGUQNrx7P4
+
+
+
+--- POST 19: New dashboard on the OBS!!! and i saw a Nacos truck in the junkyard (by u/TITO_PROJECTS29) ---
+Title: New dashboard on the OBS!!! and i saw a Nacos truck in the junkyard
+Author: u/TITO_PROJECTS29
+--- POST CONTENT ---
+
+
+--- COMMENTS ---
+
+> u/TITO_PROJECTS29:
+https://youtu.be/QkGUQNrx7P4 check out the video
+
+
+
+--- POST 20: 1994 C1500 4x4 5.7L, my power steering pump is GONE gone. I’ve got an 89’ 5.7 350 TBI rotting away due to rusted frame. Will that pump off the 89 fit my 94? (by u/Nwynne559220) ---
+Title: 1994 C1500 4x4 5.7L, my power steering pump is GONE gone. I’ve got an 89’ 5.7 350 TBI rotting away due to rusted frame. Will that pump off the 89 fit my 94?
+Author: u/Nwynne559220
+--- POST CONTENT ---
+
+
+--- COMMENTS ---
+
+> u/wayj2002:
+Yep
+
+
+
+--- POST 21: OBS 1997 SILVERADO PROJECT TRUCK (by u/TITO_PROJECTS29) ---
+Title: OBS 1997 SILVERADO PROJECT TRUCK
+Author: u/TITO_PROJECTS29
+--- POST CONTENT ---
+
+
+--- COMMENTS ---
+
+> u/TITO_PROJECTS29:
+Join me and "la mamalona" on this journey
+
+
+
+--- POST 22: Wifeys Truck - 17 Midnight ltz Crew (by u/jamesonjc) ---
+Title: Wifeys Truck - 17 Midnight ltz Crew
+Author: u/jamesonjc
+--- POST CONTENT ---
+
+
+--- COMMENTS ---
+
+> u/nottgonnalietho:
+Nice
+
+
+> u/LadyAtrox60:
+Will you marry me? Oh, wait...
+
+
+
+--- POST 23: Need some help!! (by u/aknash07) ---
+Title: Need some help!!
+Author: u/aknash07
+--- POST CONTENT ---
+Hey folks, I’ve got a 2016 Silverado 1500.. I cannot seem to get air in my tires with my compressor. I have red valve stems (I suppose that has to do with the N2) but either way none of my tires will take air at least at home.. any help would be greatly appreciated!
+
+--- COMMENTS ---
+
+> u/JohnnyTries:
+I'm willing to bet it's just a weak compressor. The stem doesn't mean anything, particularly in regards to compressed air vs. nitrogen.
+
+I bet if you pull up to any automotive shop and ask to put air in your tires, they'll likely fill right up.
+
+
+> u/aknash07:
+Ya know, that was my first thought. The compressor probably just isn’t up to the scale it needs to be.
+
+
+
+--- POST 24: Lol wish I had looked for this sub a long time ago (by u/Wraithwalkerthe1rst) ---
+Title: Lol wish I had looked for this sub a long time ago
+Author: u/Wraithwalkerthe1rst
+--- POST CONTENT ---
+Just a chevy lover that loves all things chevy or gm.
+ Actually need some advice I gotta order new wheel bearing and hub assembly from rock auto for a 2005 chevy Silverado stepside 5.3 4wld and I dont have the old one off to get part numbers and they have like a million to choose from.
+ Any advice on how to make sure I get exactly what I need?
+
+--- COMMENTS ---
+
+
+--- POST 25: Winter project (by u/Steve19_80) ---
+Title: Winter project
+Author: u/Steve19_80
+--- POST CONTENT ---
+
+
+--- COMMENTS ---

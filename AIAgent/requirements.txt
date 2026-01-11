@@ -1,0 +1,10 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+mcp-use==0.3.0
+langchain-openai==0.1.19
+python-dotenv==1.0.0
+nest-asyncio==1.5.8
+requests==2.31.0
+beautifulsoup4==4.12.2
+pydantic==2.5.0
+

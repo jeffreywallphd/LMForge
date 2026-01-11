@@ -1,0 +1,71 @@
+{
+    "Documents/Legal Aspects of Corporate Management and Finance.pdf": [
+        {
+            "chunk": "d. all of the above \ne. a and b only \n4 \nWhich ethical perspective would allow that under certain circumstances, it might be ethical to lie to a \nliar? \na. deontology \nb. virtue ethics \nc. \nutilitarianism \nd. all of the above \n5 \nUnder conscious capitalism, \na. Virtue ethics is ignored. \nb. Shareholders, whether they be traders or long-term investors, are always the first and last \nconsideration for the CEO and the board. \nc. \nMaximizing profits comes from a focus on higher purposes and harmonizing the interests of \nvarious stakeholders. \nd. Kantian duties take precedence over cost-benefit analyses.",
+            "qa_pairs": [
+                {
+                    "question": "Which ethical perspective would allow that under certain circumstances, it might be ethical to lie to a liar?",
+                    "answer": "c. utilitarianism"
+                },
+                {
+                    "question": "Under conscious capitalism, what is the approach towards maximizing profits?",
+                    "answer": "c. Maximizing profits comes from a focus on higher purposes and harmonizing the interests of various stakeholders."
+                }
+            ]
+        },
+        {
+            "chunk": "it use New York law, Oklahoma law, federal law, or German law? \n \n \n \nRobinson v. Audi \nHarry and Kay Robinson purchased a new Audi automobile from Seaway Volkswagen, Inc. (Seaway), in \nMassena, New York, in 1976. The following year the Robinson family, who resided in New York, left that \nstate for a new home in Arizona. As they passed through Oklahoma, another car struck their Audi in the \nrear, causing a fire that severely burned Kay Robinson and her two children. Later on, the Robinsons \nbrought a products-liability action in the District Court for Creek County, Oklahoma, claiming that their",
+            "qa_pairs": [
+                {
+                    "question": "Under which law did the Robinsons file their products-liability action after moving to Arizona?",
+                    "answer": "The Robinsons filed their products-liability action under Oklahoma law after moving to Arizona."
+                },
+                {
+                    "question": "What was the cause of the accident that severely burned Kay Robinson and her two children?",
+                    "answer": "The accident that severely burned Kay Robinson and her two children was caused by another car striking their Audi in the rear while they were passing through Oklahoma."
+                }
+            ]
+        }
+    ],
+    "Documents/PrinciplesofFinance-WEB.pdf": [
+        {
+            "chunk": "1 • Multiple Choice\n33\nsources and uses of funds.\nd.\nForecasting in the form of expected sales, cost of funds, and micro- and macroeconomic conditions\nare essential elements of financial planning.\n5. Which of the following statements regarding data is generally NOT true?\na.\nFinancial data is important for internal and external analysis of business firms.\nb.\nOutsiders use publicly available data about firms to make investment and regulatory decisions.\nc.\n“Gut feelings” decision-making tends to be more consistent with value maximization.\nd.",
+            "qa_pairs": [
+                {
+                    "question": "Which of the following statements regarding data is generally NOT true?",
+                    "answer": "c. 'Gut feelings' decision-making tends to be more consistent with value maximization."
+                },
+                {
+                    "question": "Forecasting in the form of expected sales, cost of funds, and micro- and macroeconomic conditions are essential elements of financial planning. Which of the following is NOT an essential element of financial planning?",
+                    "answer": "c. 'Gut feelings' decision-making tends to be more consistent with value maximization."
+                }
+            ]
+        },
+        {
+            "chunk": "trading from their own portfolio.\na.\nDealers\nb.\nBrokers\nc.\nAdvisers\nd.\nComptrollers\n11. _______________ act as facilitators in a market, and they bring together buyers and sellers for a transaction.\na.\nDealers\nb.\nBrokers\nc.\nAdvisers\nd.\nComptrollers\n34\n1 • Multiple Choice\nAccess for free at openstax.org\n12. _______________ is the study of the allocation of scarce resources, _______________ is devoted to the study of\nthese decisions of allocation by small or individual entities, and _______________ examines decisions taken\ntogether or in the aggregate.\na.\nMacroeconomics; microeconomics; economics\nb.",
+            "qa_pairs": [
+                {
+                    "question": "Who acts as facilitators in a market, bringing together buyers and sellers for a transaction?",
+                    "answer": "Brokers"
+                },
+                {
+                    "question": "What is the study of the allocation of scarce resources called, and what are the other two branches of economics?",
+                    "answer": "Macroeconomics is the study of the allocation of scarce resources, microeconomics is devoted to the study of these decisions of allocation by small or individual entities, and economics examines decisions taken together or in the aggregate."
+                }
+            ]
+        },
+        {
+            "chunk": "9. Who ultimately runs the company operations for a large corporation?\na.\nshareholders\nb.\nboard of directors\nc.\nexternal auditors\nd.\nstakeholders\n10. One of the ways in which companies attempt to mitigate short-term managerial focus is by offering\nmanagers _______________.\na.\nincreased vacation time\nb.\nincreased paid sick leave\nc.\nstock options\nd.\ncomprehensive health insurance\n11. Which of the following are used to ensure fiduciary responsibility?\n62\n2 • Multiple Choice\nAccess for free at openstax.org\na.\naudits\nb.\npress releases\nc.\nend-of-year financial ledgers\nd.\na letter from the board of directors",
+            "qa_pairs": [
+                {
+                    "question": "Who ultimately runs the company operations for a large corporation?",
+                    "answer": "b. board of directors"
+                },
+                {
+                    "question": "Which of the following are used to ensure fiduciary responsibility?",
+                    "answer": "a. audits"
+                }
+            ]
+        }
+    ]
+}

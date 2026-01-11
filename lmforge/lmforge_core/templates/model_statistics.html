@@ -74,7 +74,7 @@
         resultContainer.innerHTML = '<p>Evaluating models..., please wait...</p>';
 
         try {
-            const response = await fetch('/api/model_statistics/', {
+            const response = await fetch("/api/model_statistics/", {
                 method: 'POST',
                 // headers: { 'Content-Type': 'application/json' },
                 body: formData // Using FormData for file uploads
