@@ -110,7 +110,7 @@ def get_classifier_model():
         return CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER
     
     try:
-        # Path to your trained DeBERTa-large model (trained with max_length=256)
+        # Path to trained DeBERTa-large model (trained with max_length=256)
         # Try multiple possible paths
         hf_cache = os.getenv("HF_HOME", "D:/huggingface_cache")
         possible_paths = [
