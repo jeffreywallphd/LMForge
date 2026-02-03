@@ -6,6 +6,8 @@ import re
 
 from django.core.management.commands.runserver import Command as DjangoRunserver
 from django.core.management import call_command
+from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 
 VENV_DIR = "venv"
 REQ_FLAG = ".requirements_installed"
@@ -35,6 +37,12 @@ def detect_cuda_version():
 
     return None
 
+def database_configured():
+    try:
+        db = settings.DATABASES.get("default", {})
+        return bool(db.get("ENGINE"))
+    except ImproperlyConfigured:
+        return False
 
 def install_pytorch(python):
     print("🔥 Installing PyTorch...")
@@ -98,9 +106,14 @@ class Command(DjangoRunserver):
             print("⚡ PyTorch already installed")
 
         # STEP 4: Normal Django startup
-        print("🔄 Running migrations...")
-        call_command("makemigrations")
-        call_command("migrate")
+        if database_configured():
+            print("🔄 Running migrations...")
+            call_command("makemigrations")
+            call_command("migrate")
+        else:
+            print("⚠️ Database not configured. Skipping migrations.")
+            print("👉 Please update your .env file and rerun.")
+
 
         print("🚀 Starting Django server...\n")
         super().handle(*args, **options)
