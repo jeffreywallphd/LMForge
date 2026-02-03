@@ -82,6 +82,7 @@ def maybe_auto_update():
 def main():
     """Run administrative tasks."""
     create_env_file()
+    ensure_venv_and_requirements()
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'lmforge.settings')
     try:
         from django.core.management import execute_from_command_line
@@ -99,6 +100,41 @@ def main():
     maybe_auto_update()
 
     execute_from_command_line(sys.argv)
+
+
+VENV_DIR = "venv"
+REQ_FLAG = ".requirements_installed"
+
+
+def ensure_venv_and_requirements():
+    """
+    Ensures:
+    - virtualenv exists
+    - requirements.txt is installed
+    - restarts process inside venv
+    """
+    # If already running inside venv → nothing to do
+    if sys.prefix != sys.base_prefix:
+        return
+
+    if not Path(VENV_DIR).exists():
+        print("🐍 Creating virtual environment...")
+        subprocess.check_call([sys.executable, "-m", "venv", VENV_DIR])
+
+    python = (
+        Path(VENV_DIR) / "Scripts" / "python.exe"
+        if os.name == "nt"
+        else Path(VENV_DIR) / "bin" / "python"
+    )
+
+    if not Path(REQ_FLAG).exists():
+        print("📦 Installing requirements.txt...")
+        subprocess.check_call([python, "-m", "pip", "install", "--upgrade", "pip"])
+        subprocess.check_call([python, "-m", "pip", "install", "-r", "requirements.txt"])
+        Path(REQ_FLAG).touch()
+
+    print("🔁 Restarting inside virtualenv...\n")
+    os.execv(str(python), [str(python)] + sys.argv)
 
 
 if __name__ == '__main__':
