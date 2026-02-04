@@ -43,6 +43,26 @@ def database_configured():
         return bool(db.get("ENGINE"))
     except ImproperlyConfigured:
         return False
+    
+def is_mysql_backend():
+    try:
+        engine = settings.DATABASES.get("default", {}).get("ENGINE", "")
+        return engine == "django.db.backends.mysql"
+    except Exception:
+        return False
+    
+def inject_temp_sqlite():
+    """
+    Allows Django to boot without DB config.
+    """
+    settings.DATABASES["default"] = {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": ":memory:",
+    }
+
+def using_temp_sqlite():
+    db = settings.DATABASES.get("default", {})
+    return db.get("ENGINE") == "django.db.backends.sqlite3" and db.get("NAME") == ":memory:"
 
 def install_pytorch(python):
     print("🔥 Installing PyTorch...")
@@ -106,14 +126,21 @@ class Command(DjangoRunserver):
             print("⚡ PyTorch already installed")
 
         # STEP 4: Normal Django startup
-        if database_configured():
-            print("🔄 Running migrations...")
+        if not database_configured():
+            print("\n⚠️  DATABASE NOT CONFIGURED")
+            print("👉 Using temporary in-memory SQLite database")
+            print("👉 MySQL-only migrations are DISABLED")
+            print("👉 Update your .env with DB credentials and rerun\n")
+            inject_temp_sqlite()
+
+        # 🚨 CRITICAL RULE: migrate ONLY on MySQL
+        if is_mysql_backend():
+            print("🔄 Running MySQL migrations...")
             call_command("makemigrations")
             call_command("migrate")
         else:
-            print("⚠️ Database not configured. Skipping migrations.")
-            print("👉 Please update your .env file and rerun.")
+            print("⏭️  Skipping migrations (non-MySQL backend)")
 
-
+        # STEP 5: Start server (never crash due to DB)
         print("🚀 Starting Django server...\n")
         super().handle(*args, **options)

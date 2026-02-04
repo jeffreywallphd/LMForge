@@ -87,5 +87,7 @@ text_books/
 /sandbox/Cletus/labeled_chunks_text_books.jsonl
 /sandbox/Cletus/classifier_model
 
-
+# Runserver Flags
+.pytorch_installed
+.requirements_installed
 

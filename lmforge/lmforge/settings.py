@@ -161,8 +161,17 @@ MISSING_OR_PLACEHOLDER = (
 USE_SQLITE_FALLBACK = DEBUG and (RUNNING_DEV_SERVER or 'migrate' in sys.argv) and MISSING_OR_PLACEHOLDER
 
 if USE_SQLITE_FALLBACK:
-    print("Update your .env to connect to MySQL.")
-    DATABASES = {}
+    print("⚠️  Database not configured. Using temporary SQLite fallback.")
+    print("👉 Update your .env to connect to MySQL.\n")
+
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+        }
+    }
+
+    USING_FALLBACK_DB = True
 else:
     DATABASES = {
         'default': {
@@ -174,3 +183,5 @@ else:
             'PORT': DB_PORT,
         }
     }
+
+    USING_FALLBACK_DB = False
