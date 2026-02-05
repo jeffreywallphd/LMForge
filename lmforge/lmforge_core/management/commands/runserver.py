@@ -40,7 +40,22 @@ def detect_cuda_version():
 def database_configured():
     try:
         db = settings.DATABASES.get("default", {})
-        return bool(db.get("ENGINE"))
+        engine = db.get("ENGINE")
+
+        # SQLite is always safe
+        if engine == "django.db.backends.sqlite3":
+            return True
+
+        # MySQL requires actual credentials
+        if engine == "django.db.backends.mysql":
+            return all([
+                db.get("NAME"),
+                db.get("USER"),
+                db.get("PASSWORD"),
+                db.get("HOST"),
+            ])
+
+        return False
     except ImproperlyConfigured:
         return False
     
@@ -57,12 +72,12 @@ def inject_temp_sqlite():
     """
     settings.DATABASES["default"] = {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": ":memory:",
+        "NAME": os.path.join(settings.BASE_DIR, "temp.sqlite3"),
     }
 
 def using_temp_sqlite():
     db = settings.DATABASES.get("default", {})
-    return db.get("ENGINE") == "django.db.backends.sqlite3" and db.get("NAME") == ":memory:"
+    return db.get("ENGINE") == "django.db.backends.sqlite3" and db.get("NAME") == os.path.join(settings.BASE_DIR, "temp.sqlite3")
 
 def install_pytorch(python):
     print("🔥 Installing PyTorch...")
@@ -134,13 +149,15 @@ class Command(DjangoRunserver):
             inject_temp_sqlite()
 
         # 🚨 CRITICAL RULE: migrate ONLY on MySQL
-        if is_mysql_backend():
-            print("🔄 Running MySQL migrations...")
-            call_command("makemigrations")
-            call_command("migrate")
+        MIGRATION_FLAG = ".mysql_migrated"
+
+        if is_mysql_backend() and not os.path.exists(MIGRATION_FLAG):
+            print("🔄 Running initial MySQL migrations...")
+            call_command("migrate", interactive=False)
+            open(MIGRATION_FLAG, "w").close()
         else:
-            print("⏭️  Skipping migrations (non-MySQL backend)")
+            print("⏭️  Skipping migrations")
 
         # STEP 5: Start server (never crash due to DB)
-        print("🚀 Starting Django server...\n")
+        options["use_reloader"] = False
         super().handle(*args, **options)

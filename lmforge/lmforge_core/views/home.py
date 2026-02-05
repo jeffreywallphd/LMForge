@@ -29,8 +29,10 @@ def home_view(request):
     messages=[]
     collections=[]
 
-    try:
-        if DEFAULT_HF_ACCOUNT is not None:
+# ---------- HuggingFace Integration ----------
+
+    if DEFAULT_HF_ACCOUNT and DEFAULT_HF_KEY:
+        try:
             hf = HfApi(token=DEFAULT_HF_KEY)
 
             HFmodels = hf.list_models(author=DEFAULT_HF_ACCOUNT)
@@ -40,12 +42,16 @@ def home_view(request):
             HFdatasets = hf.list_datasets(author=DEFAULT_HF_ACCOUNT)
             for dataset in HFdatasets:
                 datasets.append(dataset)
-        else:
-            raise Exception()
-    except Exception:
+
+        except Exception as e:
+            logger.error(f"HuggingFace error: {e}")
+            messages.append(
+                "⚠ Failed to fetch HuggingFace data. Please verify your API key."
+            )
+    else:
         messages.append(
-            "You have not yet configured the software with your HuggingFace account. "
-            "Please visit the Settings page."
+            "ℹ HuggingFace is not configured. "
+            "Add your HuggingFace account name and API key in Settings."
         )
 
 # ---------- Handle Collection Deletion ----------
