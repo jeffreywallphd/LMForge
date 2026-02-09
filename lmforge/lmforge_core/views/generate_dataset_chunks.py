@@ -38,9 +38,6 @@ def get_tokenizer():
 
     try:
         login(token=DEFAULT_HF_API_KEY)
-        os.environ["HF_HOME"] = "D:/huggingface_cache"
-        os.environ["TRANSFORMERS_CACHE"] = "D:/huggingface_cache"
-        os.environ["HUGGINGFACE_HUB_CACHE"] = "D:/huggingface_cache"
 
         model_name = "meta-llama/Llama-3.2-1B-Instruct"  
         _tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True, trust_remote_code=True)

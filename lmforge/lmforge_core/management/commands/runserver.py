@@ -3,6 +3,7 @@ import sys
 import subprocess
 import platform
 import re
+from pathlib import Path
 
 from django.core.management.commands.runserver import Command as DjangoRunserver
 from django.core.management import call_command
@@ -12,6 +13,31 @@ from django.core.exceptions import ImproperlyConfigured
 VENV_DIR = "venv"
 REQ_FLAG = ".requirements_installed"
 TORCH_FLAG = ".pytorch_installed"
+
+# ---------------- HUGGINGFACE CATCH SETUP ---------------- #
+def configure_huggingface_cache():
+    """
+    Use D:/huggingface_cache on university machines.
+    Fall back gracefully on personal machines.
+    """
+    d_drive_cache = Path("D:/huggingface_cache")
+
+    if d_drive_cache.exists():
+        cache_dir = str(d_drive_cache)
+        os.environ["HF_HOME"] = cache_dir
+        os.environ["TRANSFORMERS_CACHE"] = cache_dir
+        os.environ["HUGGINGFACE_HUB_CACHE"] = cache_dir
+
+        try:
+            import transformers
+            transformers.utils.hub.TRANSFORMERS_CACHE = cache_dir
+        except Exception:
+            pass
+
+        print(f"📦 HuggingFace cache → {cache_dir}")
+    else:
+        print("📦 HuggingFace cache → default location")
+
 
 # ---------------- CUDA DETECTION ---------------- #
 
@@ -113,6 +139,9 @@ class Command(DjangoRunserver):
     help = "Run Django with automatic ML setup"
 
     def handle(self, *args, **options):
+        
+        # Configure HuggingFace cache before anything else
+        configure_huggingface_cache()
 
         # STEP 1: Ensure venv and restart inside it
         if sys.prefix == sys.base_prefix:

@@ -90,4 +90,5 @@ text_books/
 # Runserver Flags
 .pytorch_installed
 .requirements_installed
+.mysql_migrated
 

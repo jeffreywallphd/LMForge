@@ -30,21 +30,6 @@ import re
 from huggingface_hub.utils import LocalTokenNotFoundError
 
 
-# Temp Fix for loading the models. DELETE LATER 
-os.environ["HF_HOME"] = "D:/huggingface_cache" 
-os.environ["TRANSFORMERS_CACHE"] = "D:/huggingface_cache"
-os.environ["HUGGINGFACE_HUB_CACHE"] = "D:/huggingface_cache"
-
-print("HF_HOME:", os.getenv("HF_HOME"))
-print("TRANSFORMERS_CACHE:", os.getenv("TRANSFORMERS_CACHE"))
-print("HUGGINGFACE_HUB_CACHE:", os.getenv("HUGGINGFACE_HUB_CACHE"))
-
-logging.info(f"HF_HOME: {os.getenv('HF_HOME')}")
-logging.info(f"TRANSFORMERS_CACHE: {os.getenv('TRANSFORMERS_CACHE')}")
-logging.info(f"HUGGINGFACE_HUB_CACHE: {os.getenv('HUGGINGFACE_HUB_CACHE')}")
-
-transformers.utils.hub.TRANSFORMERS_CACHE = "D:/huggingface_cache"
-
 # (lazy load)
 MODEL = None
 TOKENIZER = None

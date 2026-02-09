@@ -33,12 +33,15 @@ def stream_training_output(request):
     def event_stream():
         env = os.environ.copy()
         env['PYTHONUNBUFFERED'] = '1'  # Ensure real-time output
+        env["PYTHONIOENCODING"] = "utf-8"  # Ensure UTF-8 encoding for output
 
         process = subprocess.Popen(
             [sys.executable, "manage.py", "runserver"],
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
             env=env
         )
@@ -304,9 +307,9 @@ def train_model_view(request):
 
             for name, param in model.named_parameters():
                 if param.requires_grad:
-                    print(f"✅ {name} requires grad")
+                    print(f"[TRAINABLE] {name} requires grad")
                 else:
-                    print(f"⛔ {name} is frozen")
+                    print(f"[FROZEN] {name} is frozen")
 
             # Train the model
             trainer.train()
