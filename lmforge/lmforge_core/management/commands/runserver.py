@@ -4,7 +4,7 @@ import subprocess
 import platform
 import re
 from pathlib import Path
-
+import shutil
 from django.core.management.commands.runserver import Command as DjangoRunserver
 from django.core.management import call_command
 from django.conf import settings
@@ -21,6 +21,7 @@ def configure_huggingface_cache():
     Fall back gracefully on personal machines.
     """
     d_drive_cache = Path("D:/huggingface_cache")
+    d_drive_cache.mkdir(parents=True, exist_ok=True)
 
     if d_drive_cache.exists():
         cache_dir = str(d_drive_cache)
@@ -42,26 +43,51 @@ def configure_huggingface_cache():
 # ---------------- CUDA DETECTION ---------------- #
 
 def detect_cuda_version():
+    """
+    Detect CUDA version from nvidia-smi reliably.
+    Returns CUDA tag used by PyTorch wheels (cu118, cu121, etc.)
+    """
     try:
-        result = subprocess.check_output(
-            ["nvidia-smi"], stderr=subprocess.DEVNULL
-        ).decode()
-        match = re.search(r"CUDA Version:\s+(\d+\.\d+)", result)
-        if match:
-            return match.group(1)
+        output = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
+            stderr=subprocess.DEVNULL
+        ).decode().strip()
+
+        # Driver → CUDA compatibility mapping
+        # https://docs.nvidia.com/deploy/cuda-compatibility/
+        driver = int(re.search(r"\d+", output).group())
+
+        if driver >= 535:
+            return "cu121"
+        elif driver >= 520:
+            return "cu118"
+        else:
+            return None
+
     except Exception:
-        pass
+        return None
 
-    cuda_home = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH")
-    if cuda_home:
-        version_file = os.path.join(cuda_home, "version.txt")
-        if os.path.exists(version_file):
-            with open(version_file) as f:
-                match = re.search(r"CUDA Version (\d+\.\d+)", f.read())
-                if match:
-                    return match.group(1)
+def install_requirements(python):
+    """
+    Install requirements automatically on first run
+    """
+    if not os.path.exists(REQ_FLAG):
+        print("📦 Installing project requirements...")
 
-    return None
+        subprocess.check_call([
+            python, "-m", "pip", "install",
+            "--upgrade",
+            "pip"
+        ])
+
+        subprocess.check_call([
+            python, "-m", "pip", "install",
+            "-r", "requirements.txt"
+        ])
+
+        open(REQ_FLAG, "w").close()
+
+        print("✅ Requirements installed")
 
 def database_configured():
     try:
@@ -108,29 +134,89 @@ def using_temp_sqlite():
 def install_pytorch(python):
     print("🔥 Installing PyTorch...")
 
-    cuda_version = detect_cuda_version()
-    cuda_map = {
-        "11.8": "cu118",
-        "12.1": "cu121",
-        "12.2": "cu121",  # fallback
-    }
+    # Clean old installations
+    print("🧹 Removing existing torch installation...")
+    subprocess.call([python, "-m", "pip", "uninstall", "-y", "torch", "torchvision", "torchaudio"])
 
-    if cuda_version and cuda_version in cuda_map:
-        cu_tag = cuda_map[cuda_version]
-        print(f"✅ Detected CUDA {cuda_version} → {cu_tag}")
+    print("🧹 Cleaning leftover torch files...")
+    cleanup_torch_leftovers()
+    
+    subprocess.check_call([
+        python, "-m", "pip", "install",
+        "--upgrade",
+        "pip",
+        "wheel",
+        "setuptools"
+    ])
+
+    print("📦 Installing base scientific stack...")
+
+    cuda_tag = detect_cuda_version()
+
+    if cuda_tag:
+        print(f"✅ Installing CUDA PyTorch build → {cuda_tag}")
         subprocess.check_call([
             python, "-m", "pip", "install",
+            "--upgrade",
+            "--force-reinstall",
             "torch", "torchvision", "torchaudio",
-            "--index-url", f"https://download.pytorch.org/whl/{cu_tag}"
+            "--index-url", f"https://download.pytorch.org/whl/{cuda_tag}"
         ])
     else:
-        print("⚠️ CUDA not detected / unsupported → CPU PyTorch")
+        print("⚠️ No compatible CUDA detected → installing CPU PyTorch")
         subprocess.check_call([
             python, "-m", "pip", "install",
+            "--upgrade",
+            "--force-reinstall",
             "torch", "torchvision", "torchaudio"
         ])
 
+    print("🔍 Verifying PyTorch installation & dependencies...")
+
+    subprocess.check_call([
+        python, "-m", "pip", "install",
+        "numpy==2.2.6",
+        "scipy==1.13.1",
+        "fsspec==2024.9.0",
+        "setuptools>=75",
+        "--force-reinstall"
+    ])
+    
+    subprocess.check_call([
+        python,
+        "-c",
+        "import numpy, scipy, torch; print('Torch:', torch.__version__,'NumPy:', numpy.__version__, 'SciPy:', scipy.__version__, 'CUDA:', torch.cuda.is_available())"
+    ])
+
     open(TORCH_FLAG, "w").close()
+
+def torch_is_valid():
+    try:
+        import torch
+        print(f"🔍 Torch version: {torch.__version__}")
+        print(f"🔍 CUDA available: {torch.cuda.is_available()}")
+        return True
+    except Exception:
+        return False
+
+def cleanup_torch_leftovers():
+
+    site_packages = Path(sys.prefix) / "Lib" / "site-packages"
+
+    for item in site_packages.iterdir():
+
+        name = item.name.lower()
+
+        # torch packages
+        if name.startswith(("torch", "torchvision", "torchaudio")):
+
+            try:
+                if item.is_dir():
+                    shutil.rmtree(item, ignore_errors=True)
+                else:
+                    item.unlink()
+            except Exception:
+                pass
 
 
 # ---------------- RUNSERVER ---------------- #
@@ -144,7 +230,7 @@ class Command(DjangoRunserver):
         configure_huggingface_cache()
 
         # STEP 1: Ensure venv and restart inside it
-        if sys.prefix == sys.base_prefix:
+        if sys.prefix == sys.base_prefix and "VIRTUAL_ENV" not in os.environ:
             print("🐍 No virtual environment detected.")
 
             if not os.path.exists(VENV_DIR):
@@ -162,11 +248,12 @@ class Command(DjangoRunserver):
 
         # STEP 2: Inside venv
         print("✅ Virtual environment active")
+        install_requirements(sys.executable)
 
         # STEP 3: Install PyTorch ONLY after requirements
-        if os.path.exists(REQ_FLAG) and not os.path.exists(TORCH_FLAG):
+        if not os.path.exists(TORCH_FLAG) or not torch_is_valid():
             install_pytorch(sys.executable)
-        elif os.path.exists(TORCH_FLAG):
+        else:
             print("⚡ PyTorch already installed")
 
         # STEP 4: Normal Django startup
