@@ -20,24 +20,26 @@ def configure_huggingface_cache():
     Use D:/huggingface_cache on university machines.
     Fall back gracefully on personal machines.
     """
-    d_drive_cache = Path("D:/huggingface_cache")
-    d_drive_cache.mkdir(parents=True, exist_ok=True)
+    d_drive = Path("D:/")
 
-    if d_drive_cache.exists():
-        cache_dir = str(d_drive_cache)
-        os.environ["HF_HOME"] = cache_dir
-        os.environ["TRANSFORMERS_CACHE"] = cache_dir
-        os.environ["HUGGINGFACE_HUB_CACHE"] = cache_dir
-
-        try:
-            import transformers
-            transformers.utils.hub.TRANSFORMERS_CACHE = cache_dir
-        except Exception:
-            pass
-
-        print(f"📦 HuggingFace cache → {cache_dir}")
+    if d_drive.exists():
+        cache_dir = d_drive / "huggingface_cache"
     else:
-        print("📦 HuggingFace cache → default location")
+        cache_dir = Path.home() / "huggingface_cache"   # fallback (C drive safe)
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    os.environ["HF_HOME"] = str(cache_dir)
+    os.environ["TRANSFORMERS_CACHE"] = str(cache_dir)
+    os.environ["HUGGINGFACE_HUB_CACHE"] = str(cache_dir)
+
+    try:
+        import transformers
+        transformers.utils.hub.TRANSFORMERS_CACHE = str(cache_dir)
+    except Exception:
+        pass
+
+    print(f"📦 HuggingFace cache → {cache_dir}")
 
 
 # ---------------- CUDA DETECTION ---------------- #
@@ -174,12 +176,11 @@ def install_pytorch(python):
     print("🔍 Verifying PyTorch installation & dependencies...")
 
     subprocess.check_call([
-        python, "-m", "pip", "install",
-        "numpy==2.2.6",
-        "scipy==1.13.1",
-        "fsspec==2024.9.0",
-        "setuptools>=75",
-        "--force-reinstall"
+    python, "-m", "pip", "install",
+    "torch==2.5.1+cu121",
+    "torchvision==0.20.1+cu121",
+    "torchaudio==2.5.1+cu121",
+    "--index-url", "https://download.pytorch.org/whl/cu121"
     ])
     
     subprocess.check_call([
