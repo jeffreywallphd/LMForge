@@ -1,0 +1,659 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{pdflscape}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{threeparttable}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{xcolor}
+\usepackage{setspace}
+
+\captionsetup{font=small}
+\setlength{\LTpre}{0pt}
+\setlength{\LTpost}{0pt}
+\setstretch{1.08}
+
+\title{Encoder-Based Transformer Models for Relevance Classification:\\
+A Detailed Experimental and Statistical Evaluation}
+\author{Cletus Ngwerume}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This paper presents a detailed evaluation of encoder-based transformer models for relevance classification within a document-processing workflow for language-model customization. The task is to classify text chunks as either relevant or irrelevant before they are passed to downstream dataset-generation stages. The current study evaluates 15 encoder models across three input sequence lengths, namely 128, 256, and 512 tokens, for a total of 45 trained configurations. The experimental design uses size-dependent learning rates and batch sizes, weighted loss to address class imbalance, a stratified train--test split, and model selection based on weighted F1. In addition to standard classification metrics, the study includes bootstrap confidence intervals and pairwise McNemar testing on the best-performing configuration of each model.
+
+The experiments begin from the complete set of 9{,}000 labeled chunks available in the current annotation pool. After removing label 11 instances, removing short positive examples, and applying a minimum token-length threshold, the final training set contains 6{,}316 usable instances. Results show that the best point-estimate performance is achieved by \texttt{bert-large-uncased} at 512 tokens, but several medium-sized models remain highly competitive. In particular, \texttt{xlnet} at 512 tokens and \texttt{xlm-roberta-base} at 512 tokens provide strong classification performance while substantially reducing computational cost relative to the top large model. The results also show that 512-token inputs are more competitive than in earlier experimental drafts, and that large models do not uniformly dominate at shorter context lengths. These findings support model selection based on joint consideration of predictive performance, robustness, and efficiency rather than leaderboard ranking alone.
+\end{abstract}
+
+\section{Introduction}
+
+Relevance classification is a crucial preprocessing step in many document-centered language-model workflows. When long-form documents are segmented into chunks for downstream processing, not every chunk contributes equally to the semantic purpose of the document. Core content should be preserved, while non-essential structural text should be removed before later stages such as question--answer generation, fine-tuning dataset creation, or retrieval indexing. An inaccurate relevance filter can either discard useful information or preserve noise, thereby degrading the quality of downstream outputs.
+
+This study focuses exclusively on the encoder stage of that workflow. The classifier receives a text chunk and predicts whether the chunk is relevant to the substantive content of the document. The aim is not merely to maximize classification accuracy in isolation, but to identify a model configuration that is accurate, stable, and computationally practical for repeated use in a larger automated pipeline.
+
+The current experiment evaluates 15 transformer encoders grouped into small, medium, and large size tiers, each tested at three input sequence lengths: 128, 256, and 512 tokens. The study also introduces a more explicit statistical validation layer through bootstrap confidence intervals and pairwise McNemar tests on the best configuration of each model.
+
+\section{Task Definition}
+
+The relevance-classification problem is formulated as supervised binary classification. Each chunk is assigned one of two labels:
+\begin{itemize}
+    \item \textbf{Relevant}: text that contributes to the central informational, narrative, or topical purpose of the source document;
+    \item \textbf{Irrelevant}: text that is structurally present but not suitable for downstream semantic processing, such as front matter, boilerplate, or other non-core material.
+\end{itemize}
+
+The encoder component therefore acts as a filtering mechanism between raw chunked text and later language-model operations. Because this classifier is intended to be embedded in a larger system, its evaluation must account for both classification quality and operational feasibility.
+
+\section{Data and Preprocessing}
+
+\subsection{Initial labeled pool}
+
+The current dataset originates from the labeled chunk store exported to \texttt{exported\_chunks.jsonl}. The 9{,}000 rows used in the experiment are not an arbitrary truncation of a larger labeled dataset; rather, they constitute the currently available labeled examples. Accordingly, the notebook explicitly restricts the analysis to the first 9{,}000 rows because those are the labeled data presently available for the encoder study.
+
+\subsection{Cleaning procedure}
+
+The preprocessing pipeline applied in the classifier notebook proceeds as follows:
+\begin{enumerate}
+    \item load the labeled chunk data from \texttt{exported\_chunks.jsonl};
+    \item retain the 9{,}000 labeled rows available in the current dataset;
+    \item remove all rows with label 11;
+    \item remove rows where the label is 1 and the character length of the text is below 100;
+    \item remove chunks shorter than 20 tokens using the \texttt{bert-base-uncased} tokenizer.
+\end{enumerate}
+
+After removing label 11, the retained labeled counts are:
+\[
+\{1: 5465,\; 0: 3535\}.
+\]
+
+After the remaining cleaning operations, including the 20-token threshold, the final dataset becomes:
+\[
+\{1: 4681,\; 0: 1635\},
+\]
+for a total of
+\[
+4681 + 1635 = 6316
+\]
+instances.
+
+\subsection{Train--test split}
+
+The cleaned dataset is split into training and test subsets using an 80/20 stratified partition:
+\[
+\texttt{test\_size} = 0.2,\qquad \texttt{stratify} = y,\qquad \texttt{random\_state} = 42.
+\]
+
+This preserves class proportions across the two partitions and provides a consistent basis for fair comparison across all model configurations.
+
+\subsection{Class imbalance handling}
+
+Because the resulting dataset is imbalanced, class weights are computed from the training partition and incorporated into the loss function. The current classifier notebook uses weighted cross-entropy. The class weights reported by the notebook are:
+\[
+[1.9312,\; 0.6747].
+\]
+
+These weights increase the relative penalty for mistakes on the minority class and reduce the risk of trivial majority-class optimization.
+
+\section{Model Pool and Experimental Design}
+
+\subsection{Encoder model pool}
+
+The current study evaluates the 15 encoder models shown in Table~\ref{tab:model-pool}. The size-group assignments follow the definitions implemented. 
+
+\begin{table}[H]
+\centering
+\caption{Encoder model pool used in the current study}
+\label{tab:model-pool}
+\begin{tabular}{lll}
+\toprule
+Size Group & Model & Approximate scale noted in notebook \\
+\midrule
+Small & \texttt{albert-base-v2} & $\sim 11$M \\
+Small & \texttt{electra-small} & $\sim 14$M \\
+Small & \texttt{mobilebert} & $\sim 25$M \\
+Small & \texttt{deberta-v3-small} & $\sim 44$M \\
+Small & \texttt{distilbert} & $\sim 66$M \\
+\midrule
+Medium & \texttt{bert} & $\sim 110$M \\
+Medium & \texttt{xlnet} & $\sim 110$M \\
+Medium & \texttt{roberta} & $\sim 125$M \\
+Medium & \texttt{deberta-v3-base} & $\sim 86$M \\
+Medium & \texttt{xlm-roberta-base} & $\sim 270 $M\\
+\midrule
+Large & \texttt{bert-large-uncased} & $\sim 340$M \\
+Large & \texttt{roberta-large} & $\sim 355$M \\
+Large & \texttt{electra-large} & $\sim 335$M \\
+Large & \texttt{xlm-roberta-large} & $\sim 550$M \\
+Large & \texttt{deberta-large} & 
+$\sim 435$M\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Input lengths}
+
+The models are evaluated at three input sequence lengths:
+\[
+L \in \{128,\;256,\;512\}.
+\]
+
+With 15 models and 3 sequence lengths, the total number of trained configurations is:
+\[
+15 \times 3 = 45.
+\]
+
+A 1024-token encoder condition was not included. The reason should be stated explicitly in the final manuscript as follows:
+
+\begin{quote}
+We did not run 1024-token inputs for the encoder models because of the mismatch between the input sequence length and the model's positional embedding limit on all the models.
+\end{quote}
+
+\subsection{Training configuration}
+
+The training policy is shared across models but uses size-dependent learning rates and batch sizes. All models are trained for 3 epochs, with warmup ratio $=0.1$, weight decay $=0.01$, and weighted loss. The exact settings are shown in Table~\ref{tab:hyperparameters}.
+
+\begin{table}[H]
+\centering
+\caption{Training configuration used in the current encoder study}
+\label{tab:hyperparameters}
+\begin{tabular}{ll}
+\toprule
+Setting & Value \\
+\midrule
+Epochs & 3 \\
+Warmup ratio & 0.1 \\
+Weight decay & 0.01 \\
+Selection metric & Weighted F1 \\
+Seed & 42 \\
+Train--test split & 80/20 stratified \\
+Loss & Weighted cross-entropy \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Size-dependent batch sizes and learning rates}
+\label{tab:size-hyperparameters}
+\begin{tabular}{lcc}
+\toprule
+Size Group & Batch Size & Learning Rate \\
+\midrule
+Small & 16 & $5 \times 10^{-5}$ \\
+Medium & 8 & $3 \times 10^{-5}$ \\
+Large & 4 & $2 \times 10^{-5}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Evaluation Metrics}
+
+For each trained configuration, the experiment records accuracy, weighted F1, weighted precision, weighted recall, training time, and prediction time. Weighted F1 is used as the primary model-selection metric because of class imbalance. Accuracy is also reported for completeness, but weighted F1 is more informative for comparing models under uneven label proportions.
+
+Training time and prediction time are included because the encoder is intended for repeated use in a system pipeline, where raw predictive quality must be balanced against cost.
+
+\section{Statistical Validation}
+
+\subsection{Bootstrap confidence intervals}
+
+Statistical robustness is evaluated by regenerating predictions from the best checkpoint for each model and computing bootstrap confidence intervals for accuracy and weighted F1. Let $\hat{\theta}$ denote the observed metric value for a model. For each bootstrap replicate $b$, an index set of size $N$ is sampled with replacement from the test set, and the metric is recomputed:
+\[
+\hat{\theta}^{*(b)}, \qquad b = 1,\dots,B.
+\]
+
+The experiement uses
+\[
+B = 2000
+\]
+bootstrap replicates. The 95\% percentile confidence interval is then computed as:
+\[
+\left[\hat{\theta}^{}_{0.025},\; \hat{\theta}^{}_{0.975}\right].
+\]
+
+\subsection{Pairwise McNemar tests}
+
+To evaluate whether the best configurations of two models differ in their prediction behavior on the same test items, the study applies pairwise McNemar testing. For two classifiers $A$ and $B$, define:
+\begin{itemize}
+    \item $b$: number of instances where $A$ is wrong and $B$ is correct;
+    \item $c$: number of instances where $A$ is correct and $B$ is wrong.
+\end{itemize}
+
+The continuity-corrected McNemar statistic is:
+\[
+\chi^2 = \frac{(|b-c|-1)^2}{b+c}.
+\]
+
+The test is especially useful here because models are evaluated on the same test set, and simple differences in aggregate metric values do not by themselves indicate whether two classifiers behave meaningfully differently.
+
+\section{Results}
+
+\subsection{Best configuration per model}
+
+Table~\ref{tab:best-per-model} reports the best configuration for each model according to weighted F1. 
+
+\begin{table}[H]
+\centering
+\caption{Best configuration per model, selected by weighted F1}
+\label{tab:best-per-model}
+\small
+\begin{tabular}{llccccc}
+\toprule
+Group & Model & Best Len & Accuracy & Weighted F1 & Train Time (s) & Pred Time (s) \\
+\midrule
+Large & \texttt{bert-large-uncased} & 512 & 0.9589 & 0.9590 & 1194.45 & 24.09 \\
+Medium & \texttt{xlnet} & 512 & 0.9573 & 0.9568 & 677.24 & 16.12 \\
+Large & \texttt{electra-large} & 512 & 0.9557 & 0.9548 & 1399.07 & 30.06 \\
+Medium & \texttt{xlm-roberta-base} & 512 & 0.9549 & 0.9543 & 427.63 & 6.16 \\
+Medium & \texttt{bert} & 128 & 0.9541 & 0.9539 & 115.49 & 2.07 \\
+Medium & \texttt{roberta} & 512 & 0.9533 & 0.9535 & 317.58 & 6.48 \\
+Large & \texttt{roberta-large} & 256 & 0.9533 & 0.9525 & 793.92 & 11.32 \\
+Small & \texttt{electra-small} & 512 & 0.9525 & 0.9520 & 96.41 & 2.56 \\
+Small & \texttt{deberta-v3-small} & 512 & 0.9525 & 0.9519 & 340.05 & 8.68 \\
+Small & \texttt{distilbert} & 128 & 0.9525 & 0.9519 & 55.12 & 1.26 \\
+Medium & \texttt{deberta-v3-base} & 256 & 0.9517 & 0.9518 & 306.04 & 5.56 \\
+Large & \texttt{xlm-roberta-large} & 256 & 0.9517 & 0.9514 & 1038.68 & 10.99 \\
+Small & \texttt{mobilebert} & 512 & 0.9509 & 0.9509 & 225.29 & 5.04 \\
+Small & \texttt{albert-base-v2} & 512 & 0.9502 & 0.9496 & 332.68 & 9.70 \\
+Large & \texttt{deberta-large} & 256 & 0.9462 & 0.9450 & 1091.31 & 18.08 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The highest point-estimate weighted F1 is achieved by \texttt{bert-large-uncased} at 512 tokens. However, several medium-sized models follow closely behind, particularly \texttt{xlnet} at 512 and \texttt{xlm-roberta-base} at 512.
+
+\subsection{Average performance by size group and sequence length}
+
+To better understand systematic trends rather than only the top-performing points, Table~\ref{tab:group-averages} reports mean performance across all models within each size group and sequence-length condition.
+
+\begin{table}[H]
+\centering
+\caption{Mean performance by size group and input sequence length}
+\label{tab:group-averages}
+\begin{tabular}{lccccc}
+\toprule
+Group & Max Len & Mean Accuracy & Mean Weighted F1 & Mean Train Time (s) & Mean Pred Time (s) \\
+\midrule
+Small & 128 & 0.9497 & 0.9489 & 82.90 & 1.71 \\
+Small & 256 & 0.9476 & 0.9470 & 117.80 & 2.70 \\
+Small & 512 & 0.9511 & 0.9505 & 227.99 & 5.95 \\
+\midrule
+Medium & 128 & 0.9509 & 0.9508 & 179.58 & 2.46 \\
+Medium & 256 & 0.9503 & 0.9500 & 253.85 & 4.32 \\
+Medium & 512 & 0.9528 & 0.9526 & 475.41 & 10.41 \\
+\midrule
+Large & 128 & 0.7807 & 0.7503 & 709.94 & 8.21 \\
+Large & 256 & 0.9487 & 0.9479 & 900.61 & 12.97 \\
+Large & 512 & 0.9513 & 0.9506 & 1693.53 & 29.37 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three findings are immediately visible. First, 512-token inputs are highly competitive and often superior on average, especially for the medium group. Second, large models do not dominate uniformly across all lengths. In particular, the large-model average at 128 tokens is poor relative to the same group at 256 and 512 tokens. Third, moving from medium to large models substantially increases computational cost, especially at 512 tokens.
+
+\subsection{Interpretation of length effects}
+
+In the results, 512-token inputs are the best setting for a substantial portion of the model pool. This includes the best configuration of \texttt{bert-large-uncased}, \texttt{xlnet}, \texttt{electra-large}, \texttt{xlm-roberta-base}, \texttt{roberta}, \texttt{electra-small}, \texttt{deberta-v3-small}, \texttt{mobilebert}, and \texttt{albert-base-v2}. Thus, the current evidence indicates that the 512-token condition should be treated as a central experimental result rather than a marginal extension.
+
+At the same time, 128-token settings remain important for fast baselines. For example, \texttt{bert} at 128 and \texttt{distilbert} at 128 remain strong practical candidates when lower latency is important.
+
+\subsection{Bootstrap confidence intervals}
+
+Table~\ref{tab:bootstrap-summary} reports the bootstrap results for the best configuration of each model.
+
+\begin{table}[H]
+\centering
+\caption{Bootstrap confidence intervals for the best configuration of each model}
+\label{tab:bootstrap-summary}
+\scriptsize
+\begin{tabular}{llclcl}
+\toprule
+Group & Model & Best Len & Accuracy [95\% CI] & Weighted F1 [95\% CI] \\
+\midrule
+Small & \texttt{albert-base-v2} & 512 & 0.9648 [0.9557, 0.9733] & 0.9647 [0.9555, 0.9732] \\
+Small & \texttt{electra-small} & 512 & 0.9611 [0.9514, 0.9702] & 0.9609 [0.9511, 0.9701] \\
+Small & \texttt{mobilebert} & 512 & 0.9824 [0.9757, 0.9885] & 0.9824 [0.9757, 0.9885] \\
+Small & \texttt{deberta-v3-small} & 512 & 0.9793 [0.9721, 0.9860] & 0.9793 [0.9720, 0.9860] \\
+Small & \texttt{distilbert} & 128 & 0.9702 [0.9611, 0.9781] & 0.9701 [0.9610, 0.9781] \\
+\midrule
+Medium & \texttt{bert} & 128 & 0.9648 [0.9559, 0.9738] & 0.9647 [0.9560, 0.9738] \\
+Medium & \texttt{xlnet} & 512 & 0.9793 [0.9721, 0.9860] & 0.9792 [0.9720, 0.9859] \\
+Medium & \texttt{roberta} & 512 & 0.9812 [0.9744, 0.9879] & 0.9812 [0.9745, 0.9878] \\
+Medium & \texttt{deberta-v3-base} & 256 & 0.9741 [0.9668, 0.9819] & 0.9741 [0.9666, 0.9818] \\
+Medium & \texttt{xlm-roberta-base} & 512 & 0.9806 [0.9733, 0.9872] & 0.9805 [0.9733, 0.9872] \\
+\midrule
+Large & \texttt{bert-large-uncased} & 512 & 0.9866 [0.9807, 0.9917] & 0.9866 [0.9806, 0.9915] \\
+Large & \texttt{roberta-large} & 256 & 0.9824 [0.9758, 0.9888] & 0.9824 [0.9756, 0.9885] \\
+Large & \texttt{electra-large} & 512 & 0.9733 [0.9656, 0.9805] & 0.9732 [0.9654, 0.9805] \\
+Large & \texttt{xlm-roberta-large} & 256 & 0.9620 [0.9529, 0.9708] & 0.9618 [0.9526, 0.9705] \\
+Large & \texttt{deberta-large} & 256 & 0.9620 [0.9534, 0.9717] & 0.9619 [0.9533, 0.9715] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The bootstrap analysis supports the claim that the best configurations are stable under resampling. The confidence intervals are relatively narrow, and several top-performing alternatives have strongly overlapping ranges, especially among the best medium and large configurations. This reinforces the need to avoid overinterpreting small differences in point estimates.
+
+\subsection{Pairwise McNemar comparisons}
+
+Table~\ref{tab:mcnemar-selected} presents representative McNemar comparisons among selected best configurations. The full pairwise table is included in Appendix~\ref{app:mcnemar}.
+
+\begin{table}[H]
+\centering
+\caption{Representative pairwise McNemar comparisons among selected best configurations}
+\label{tab:mcnemar-selected}
+\small
+\begin{tabular}{lllccl}
+\toprule
+Model A & Len A & Model B & Len B & $p$-value & Interpretation \\
+\midrule
+\texttt{bert} & 128 & \texttt{bert-large-uncased} & 512 & 0.000001 & significant difference \\
+\texttt{bert} & 128 & \texttt{xlnet} & 512 & 0.001143 & significant difference \\
+\texttt{bert} & 128 & \texttt{xlm-roberta-base} & 512 & 0.002120 & significant difference \\
+\texttt{distilbert} & 128 & \texttt{xlnet} & 512 & 0.037514 & significant difference \\
+\texttt{distilbert} & 128 & \texttt{xlm-roberta-base} & 512 & 0.022271 & significant difference \\
+\texttt{bert-large-uncased} & 512 & \texttt{xlnet} & 512 & 0.072486 & not significant at 0.05 \\
+\texttt{bert-large-uncased} & 512 & \texttt{xlm-roberta-base} & 512 & 0.077556 & not significant at 0.05 \\
+\texttt{bert-large-uncased} & 512 & \texttt{roberta} & 512 & 0.137395 & not significant at 0.05 \\
+\texttt{bert} & 128 & \texttt{distilbert} & 128 & 0.229949 & not significant at 0.05 \\
+\texttt{roberta} & 512 & \texttt{xlnet} & 512 & 0.479500 & not significant at 0.05 \\
+\texttt{roberta} & 512 & \texttt{xlm-roberta-base} & 512 & 0.517632 & not significant at 0.05 \\
+\texttt{xlm-roberta-base} & 512 & \texttt{xlnet} & 512 & 1.000000 & not significant at 0.05 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+These results are important for the interpretation of the leaderboard. Although \texttt{bert-large-uncased} at 512 produces the strongest point estimate, it is not significantly different at the 0.05 level from several leading medium-sized alternatives, including \texttt{xlnet} at 512 and \texttt{xlm-roberta-base} at 512. This means that practical model selection should not be reduced to a single best weighted-F1 value.
+
+\section{Discussion}
+
+The current results support several substantive conclusions.
+
+In the current experiment, 512-token inputs are frequently the strongest condition. This shift is visible both in the best-configuration table and in the group-level averages, where 512 tokens performs best or near-best across all size tiers.
+
+The strongest overall point-estimate model is \texttt{bert-large-uncased} at 512 tokens, but the improvement over the best medium alternatives is not decisive when error-pattern significance is examined. The McNemar results show that \texttt{xlnet} at 512 and \texttt{xlm-roberta-base} at 512 are statistically competitive with the top large model on the shared test set. This is important because both models are substantially cheaper than the best large configuration.
+
+The large group should not be interpreted as uniformly superior. Its poor average result at 128 tokens indicates that the relationship between model size and context length is not monotonic. Some large models appear to require more favorable sequence-length settings to realize their potential, while medium models remain more stable across practical settings.
+
+Finally, the current results support a model-selection philosophy based on joint consideration of predictive performance, statistical stability, and efficiency. If the design objective is absolute top point performance, \texttt{bert-large-uncased} at 512 is the natural choice. If the design objective is a more practical balance between performance and runtime, \texttt{xlnet} at 512, \texttt{xlm-roberta-base} at 512, and even \texttt{bert} at 128 become strong candidates.
+
+\section{Conclusion}
+
+This paper presented a detailed experimental and statistical evaluation of encoder-based transformer models for relevance classification. The study began from the full set of 9{,}000 labeled chunks available in the current annotation pool and, after cleaning, trained and evaluated 45 configurations formed by crossing 15 encoder models with three input sequence lengths.
+
+The current findings show that \texttt{bert-large-uncased} at 512 tokens achieves the best point-estimate weighted F1, but several medium-sized alternatives remain highly competitive and offer substantially lower computational cost. The results also show that 512-token inputs are much more competitive than earlier drafts suggested and that large models do not automatically dominate at shorter context lengths.
+
+Taken together, the results indicate that encoder selection for this task should be framed as a tradeoff problem rather than a single-metric ranking problem. This is especially relevant when the encoder is intended to be embedded in a repeated system workflow, where efficiency and robustness matter alongside raw classification quality.
+
+\section{Figures}
+
+Figure~\ref{fig:f1-heatmap} shows the weighted F1 scores for all 45 encoder configurations. 
+This figure provides a compact view of model quality across both architecture and input length. 
+The strongest performance is concentrated among several 512-token configurations, with particularly strong results from \texttt{bert-large-uncased}, \texttt{xlnet}, and \texttt{xlm-roberta-base}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{weighted_f1_heatmap.png}
+\caption{Weighted F1 across all 45 encoder configurations. Rows correspond to models and columns correspond to input sequence lengths of 128, 256, and 512 tokens.}
+\label{fig:f1-heatmap}
+\end{figure}
+
+Figure~\ref{fig:accuracy-heatmap} reports classification accuracy across the same 45 configurations. 
+The overall pattern is similar to the weighted F1 results, although weighted F1 remains the primary selection metric because of class imbalance.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{accuracy_heatmap.png}
+\caption{Accuracy across all 45 encoder configurations.}
+\label{fig:accuracy-heatmap}
+\end{figure}
+
+Figure~\ref{fig:pred-heatmap} shows prediction time for every encoder configuration. 
+This plot makes the computational tradeoff more explicit, especially for the 512-token large-model settings, which incur substantially higher prediction cost.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{prediction_time_heatmap.png}
+\caption{Prediction time across all 45 encoder configurations.}
+\label{fig:pred-heatmap}
+\end{figure}
+
+Figure~\ref{fig:best-f1-bar} summarizes the best weighted F1 achieved by each encoder model across the tested input lengths. 
+This figure highlights the close competition among several medium and large models.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{best_weighted_f1_per_model.png}
+\caption{Best weighted F1 achieved by each encoder model under its strongest tested configuration.}
+\label{fig:best-f1-bar}
+\end{figure}
+
+Figure~\ref{fig:tradeoff} presents the tradeoff between weighted F1 and prediction time for the best configuration of each model. 
+This figure is especially useful for practical selection because it shows which models remain competitive while reducing inference cost.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{performance_vs_prediction_time.png}
+\caption{Performance--efficiency tradeoff for the best configuration of each encoder model.}
+\label{fig:tradeoff}
+\end{figure}
+
+Figure~\ref{fig:bootstrap-ci} shows the bootstrap 95\% confidence intervals for weighted F1 for the best configuration of each model. 
+The relatively narrow intervals indicate that the leading configurations are stable under resampling, although overlap among several top models cautions against overinterpreting small differences in point estimates.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{bootstrap_ci_weighted_f1.png}
+\caption{Bootstrap 95\% confidence intervals for weighted F1 for the best configuration of each encoder model.}
+\label{fig:bootstrap-ci}
+\end{figure}
+
+Figure~\ref{fig:mcnemar-heatmap} visualizes the pairwise McNemar p-values for the best configuration of each model. 
+This figure helps identify which apparent leaderboard differences correspond to statistically distinguishable prediction behavior and which do not.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{mcnemar_pvalue_heatmap.png}
+\caption{Pairwise McNemar p-values for the best configuration of each encoder model. Lower p-values indicate stronger evidence that two models differ in their prediction behavior on the same test instances.}
+\label{fig:mcnemar-heatmap}
+\end{figure}
+\section{All 45 Encoder Configurations}
+\label{app:all-configs}
+
+\begin{landscape}
+\scriptsize
+\begin{longtable}{llccccccc}
+\caption{Full performance table for all encoder configurations} \\
+\toprule
+Group & Model & Max Len & Accuracy & Weighted F1 & Precision & Recall & Train Time (s) & Pred Time (s) \\
+\midrule
+\endfirsthead
+\toprule
+Group & Model & Max Len & Accuracy & Weighted F1 & Precision & Recall & Train Time (s) & Pred Time (s) \\
+\midrule
+\endhead
+
+Small & \texttt{albert-base-v2} & 128 & 0.942247 & 0.941280 & 0.941824 & 0.942247 & 73.510133 & 2.009042 \\
+Small & \texttt{albert-base-v2} & 256 & 0.939873 & 0.938902 & 0.939336 & 0.939873 & 156.136250 & 4.519129 \\
+Small & \texttt{albert-base-v2} & 512 & 0.950158 & 0.949552 & 0.949776 & 0.950158 & 332.680437 & 9.699316 \\
+Small & \texttt{electra-small} & 128 & 0.950158 & 0.949265 & 0.950118 & 0.950158 & 35.851000 & 1.544401 \\
+Small & \texttt{electra-small} & 256 & 0.950158 & 0.950329 & 0.950572 & 0.950158 & 43.223512 & 1.853080 \\
+Small & \texttt{electra-small} & 512 & 0.952532 & 0.951981 & 0.952123 & 0.952532 & 96.414687 & 2.563694 \\
+Small & \texttt{mobilebert} & 128 & 0.951741 & 0.951174 & 0.951544 & 0.951741 & 137.815149 & 2.241274 \\
+Small & \texttt{mobilebert} & 256 & 0.950158 & 0.949518 & 0.949716 & 0.950158 & 142.388562 & 1.273698 \\
+Small & \texttt{mobilebert} & 512 & 0.950949 & 0.950900 & 0.951478 & 0.950949 & 225.294656 & 5.039681 \\
+Small & \texttt{deberta-v3-small} & 128 & 0.952532 & 0.951764 & 0.952372 & 0.952532 & 112.190788 & 1.511504 \\
+Small & \texttt{deberta-v3-small} & 256 & 0.946203 & 0.945312 & 0.945876 & 0.946203 & 168.931961 & 3.220063 \\
+Small & \texttt{deberta-v3-small} & 512 & 0.952532 & 0.951928 & 0.952339 & 0.952532 & 340.046688 & 8.684825 \\
+Small & \texttt{distilbert} & 128 & 0.952532 & 0.951874 & 0.952211 & 0.952532 & 55.118418 & 1.256317 \\
+Small & \texttt{distilbert} & 256 & 0.951741 & 0.950964 & 0.951530 & 0.951741 & 78.316582 & 2.609655 \\
+Small & \texttt{distilbert} & 512 & 0.947785 & 0.947217 & 0.947588 & 0.947785 & 145.287437 & 5.471845 \\
+Medium & \texttt{bert} & 128 & 0.954114 & 0.953927 & 0.954217 & 0.954114 & 115.494352 & 2.065423 \\
+Medium & \texttt{bert} & 256 & 0.949367 & 0.948777 & 0.949111 & 0.949367 & 149.976406 & 4.646677 \\
+Medium & \texttt{bert} & 512 & 0.952532 & 0.951883 & 0.952321 & 0.952532 & 346.979187 & 9.988469 \\
+Medium & \texttt{xlnet} & 128 & 0.952532 & 0.952416 & 0.952688 & 0.952532 & 151.181839 & 1.601393 \\
+Medium & \texttt{xlnet} & 256 & 0.952532 & 0.951979 & 0.952280 & 0.952532 & 227.223125 & 2.958214 \\
+Medium & \texttt{xlnet} & 512 & 0.957278 & 0.956830 & 0.957100 & 0.957278 & 677.243563 & 16.117009 \\
+Medium & \texttt{roberta} & 128 & 0.951741 & 0.950904 & 0.951348 & 0.951741 & 151.092758 & 2.359836 \\
+Medium & \texttt{roberta} & 256 & 0.954114 & 0.953230 & 0.953618 & 0.954114 & 246.454727 & 4.589693 \\
+Medium & \texttt{roberta} & 512 & 0.953323 & 0.953482 & 0.953879 & 0.953323 & 317.577500 & 6.482283 \\
+Medium & \texttt{deberta-v3-base} & 128 & 0.946203 & 0.945618 & 0.945799 & 0.946203 & 197.501297 & 2.594155 \\
+Medium & \texttt{deberta-v3-base} & 256 & 0.951741 & 0.951764 & 0.952106 & 0.951741 & 306.035406 & 5.556699 \\
+Medium & \texttt{deberta-v3-base} & 512 & 0.950158 & 0.949317 & 0.949537 & 0.950158 & 433.694499 & 7.204798 \\
+Medium & \texttt{xlm-roberta-base} & 128 & 0.951741 & 0.951291 & 0.951778 & 0.951741 & 282.638138 & 3.682286 \\
+Medium & \texttt{xlm-roberta-base} & 256 & 0.950158 & 0.949691 & 0.950145 & 0.950158 & 357.716154 & 5.171094 \\
+Medium & \texttt{xlm-roberta-base} & 512 & 0.954905 & 0.954306 & 0.954640 & 0.954905 & 427.625531 & 6.159469 \\
+Large & \texttt{bert-large-uncased} & 128 & 0.956487 & 0.956046 & 0.956364 & 0.956487 & 582.531921 & 8.238929 \\
+Large & \texttt{bert-large-uncased} & 256 & 0.954114 & 0.953435 & 0.953687 & 0.954114 & 806.559063 & 10.108343 \\
+Large & \texttt{bert-large-uncased} & 512 & 0.958861 & 0.958982 & 0.959247 & 0.958861 & 1194.447500 & 24.089855 \\
+Large & \texttt{roberta-large} & 128 & 0.955696 & 0.955122 & 0.955500 & 0.955696 & 595.336188 & 3.609439 \\
+Large & \texttt{roberta-large} & 256 & 0.953323 & 0.952486 & 0.952872 & 0.953323 & 793.919875 & 11.322502 \\
+Large & \texttt{roberta-large} & 512 & 0.951741 & 0.950661 & 0.951075 & 0.951741 & 1816.212875 & 25.692445 \\
+Large & \texttt{electra-large} & 128 & 0.445411 & 0.302674 & 0.198391 & 0.445411 & 775.576062 & 5.847260 \\
+Large & \texttt{electra-large} & 256 & 0.953323 & 0.952631 & 0.952971 & 0.953323 & 1026.654187 & 11.540811 \\
+Large & \texttt{electra-large} & 512 & 0.955696 & 0.954823 & 0.955191 & 0.955696 & 1399.067375 & 30.064797 \\
+Large & \texttt{xlm-roberta-large} & 128 & 0.600000 & 0.592722 & 0.605043 & 0.600000 & 948.793125 & 18.514828 \\
+Large & \texttt{xlm-roberta-large} & 256 & 0.951741 & 0.951417 & 0.951855 & 0.951741 & 1038.679750 & 10.991898 \\
+Large & \texttt{xlm-roberta-large} & 512 & 0.945411 & 0.945157 & 0.945769 & 0.945411 & 2521.662000 & 46.182213 \\
+Large & \texttt{deberta-large} & 128 & 0.945411 & 0.945030 & 0.945483 & 0.945411 & 647.443079 & 4.834345 \\
+Large & \texttt{deberta-large} & 256 & 0.946203 & 0.945012 & 0.945079 & 0.946203 & 1091.308000 & 18.075430 \\
+Large & \texttt{deberta-large} & 512 & 0.945411 & 0.945161 & 0.946120 & 0.945411 & 1535.556000 & 19.833659 \\
+\bottomrule
+\end{longtable}
+\end{landscape}
+
+\section{Full Pairwise McNemar Results}
+\label{app:mcnemar}
+
+\begin{landscape}
+\scriptsize
+\begin{longtable}{llllcccc}
+\caption{Complete pairwise McNemar results for the best configuration of each model} \\
+\toprule
+Model A & Len A & Model B & Len B & $\chi^2$ & $p$-value & $b$ & $c$ \\
+\midrule
+\endfirsthead
+\toprule
+Model A & Len A & Model B & Len B & $\chi^2$ & $p$-value & $b$ & $c$ \\
+\midrule
+\endhead
+
+\texttt{albert-base-v2} & 512 & \texttt{bert} & 128 & 0.016393 & 0.898107 & 31 & 30 \\
+\texttt{albert-base-v2} & 512 & \texttt{bert-large-uncased} & 512 & 23.592593 & 0.000001 & 45 & 9 \\
+\texttt{albert-base-v2} & 512 & \texttt{deberta-large} & 256 & 0.048193 & 0.826221 & 40 & 43 \\
+\texttt{albert-base-v2} & 512 & \texttt{deberta-v3-base} & 256 & 3.225806 & 0.072486 & 43 & 27 \\
+\texttt{albert-base-v2} & 512 & \texttt{deberta-v3-small} & 512 & 11.574074 & 0.000669 & 36 & 12 \\
+\texttt{albert-base-v2} & 512 & \texttt{distilbert} & 128 & 9.142857 & 0.002497 & 41 & 15 \\
+\texttt{albert-base-v2} & 512 & \texttt{electra-large} & 512 & 1.562500 & 0.211300 & 40 & 25 \\
+\texttt{albert-base-v2} & 512 & \texttt{electra-small} & 512 & 0.372093 & 0.541735 & 38 & 33 \\
+\texttt{albert-base-v2} & 512 & \texttt{mobilebert} & 512 & 0.040000 & 0.841481 & 30 & 33 \\
+\texttt{albert-base-v2} & 512 & \texttt{roberta} & 512 & 0.142857 & 0.705457 & 32 & 35 \\
+\texttt{albert-base-v2} & 512 & \texttt{roberta-large} & 256 & 0.307692 & 0.579100 & 38 & 32 \\
+\texttt{albert-base-v2} & 512 & \texttt{xlm-roberta-base} & 512 & 0.600000 & 0.438578 & 32 & 40 \\
+\texttt{albert-base-v2} & 512 & \texttt{xlm-roberta-large} & 256 & 0.390244 & 0.532091 & 37 & 28 \\
+\texttt{albert-base-v2} & 512 & \texttt{xlnet} & 512 & 0.000000 & 1.000000 & 31 & 32 \\
+\texttt{bert} & 128 & \texttt{bert-large-uncased} & 512 & 23.591837 & 0.000001 & 42 & 7 \\
+\texttt{bert} & 128 & \texttt{deberta-large} & 256 & 0.131579 & 0.716037 & 26 & 21 \\
+\texttt{bert} & 128 & \texttt{deberta-v3-base} & 256 & 0.000000 & 1.000000 & 24 & 25 \\
+\texttt{bert} & 128 & \texttt{deberta-v3-small} & 512 & 0.118644 & 0.730529 & 26 & 24 \\
+\texttt{bert} & 128 & \texttt{distilbert} & 128 & 1.442308 & 0.229949 & 21 & 13 \\
+\texttt{bert} & 128 & \texttt{electra-large} & 512 & 3.571429 & 0.058782 & 28 & 17 \\
+\texttt{bert} & 128 & \texttt{electra-small} & 512 & 1.730769 & 0.188241 & 24 & 12 \\
+\texttt{bert} & 128 & \texttt{mobilebert} & 512 & 0.142857 & 0.705457 & 24 & 20 \\
+\texttt{bert} & 128 & \texttt{roberta} & 512 & 11.574074 & 0.000669 & 40 & 14 \\
+\texttt{bert} & 128 & \texttt{roberta-large} & 256 & 2.418605 & 0.119857 & 30 & 20 \\
+\texttt{bert} & 128 & \texttt{xlm-roberta-base} & 512 & 9.441860 & 0.002120 & 43 & 18 \\
+\texttt{bert} & 128 & \texttt{xlm-roberta-large} & 256 & 0.000000 & 1.000000 & 23 & 24 \\
+\texttt{bert} & 128 & \texttt{xlnet} & 512 & 10.580000 & 0.001143 & 37 & 13 \\
+\texttt{bert-large-uncased} & 512 & \texttt{deberta-large} & 256 & 11.757576 & 0.000608 & 36 & 13 \\
+\texttt{bert-large-uncased} & 512 & \texttt{deberta-v3-base} & 256 & 8.027778 & 0.004608 & 30 & 13 \\
+\texttt{bert-large-uncased} & 512 & \texttt{deberta-v3-small} & 512 & 16.761905 & 0.000042 & 35 & 8 \\
+\texttt{bert-large-uncased} & 512 & \texttt{distilbert} & 128 & 14.222222 & 0.000162 & 37 & 10 \\
+\texttt{bert-large-uncased} & 512 & \texttt{electra-large} & 512 & 4.840000 & 0.027808 & 28 & 14 \\
+\texttt{bert-large-uncased} & 512 & \texttt{electra-small} & 512 & 24.595745 & 0.000001 & 41 & 6 \\
+\texttt{bert-large-uncased} & 512 & \texttt{mobilebert} & 512 & 15.020833 & 0.000106 & 34 & 10 \\
+\texttt{bert-large-uncased} & 512 & \texttt{roberta} & 512 & 2.205882 & 0.137395 & 19 & 10 \\
+\texttt{bert-large-uncased} & 512 & \texttt{roberta-large} & 256 & 2.742857 & 0.097701 & 22 & 13 \\
+\texttt{bert-large-uncased} & 512 & \texttt{xlm-roberta-base} & 512 & 3.111111 & 0.077717 & 20 & 10 \\
+\texttt{bert-large-uncased} & 512 & \texttt{xlm-roberta-large} & 256 & 3.555556 & 0.059346 & 23 & 11 \\
+\texttt{bert-large-uncased} & 512 & \texttt{xlnet} & 512 & 3.000000 & 0.083265 & 19 & 10 \\
+\texttt{deberta-large} & 256 & \texttt{deberta-v3-base} & 256 & 0.053571 & 0.816688 & 28 & 24 \\
+\texttt{deberta-large} & 256 & \texttt{deberta-v3-small} & 512 & 0.138889 & 0.709388 & 29 & 24 \\
+\texttt{deberta-large} & 256 & \texttt{distilbert} & 128 & 0.000000 & 1.000000 & 20 & 21 \\
+\texttt{deberta-large} & 256 & \texttt{electra-large} & 512 & 3.448276 & 0.063388 & 31 & 18 \\
+\texttt{deberta-large} & 256 & \texttt{electra-small} & 512 & 0.780488 & 0.376812 & 26 & 19 \\
+\texttt{deberta-large} & 256 & \texttt{mobilebert} & 512 & 0.944444 & 0.331975 & 21 & 13 \\
+\texttt{deberta-large} & 256 & \texttt{roberta} & 512 & 2.086957 & 0.148670 & 26 & 14 \\
+\texttt{deberta-large} & 256 & \texttt{roberta-large} & 256 & 2.347826 & 0.125462 & 29 & 16 \\
+\texttt{deberta-large} & 256 & \texttt{xlm-roberta-base} & 512 & 1.857143 & 0.173104 & 26 & 14 \\
+\texttt{deberta-large} & 256 & \texttt{xlm-roberta-large} & 256 & 1.285714 & 0.256839 & 24 & 14 \\
+\texttt{deberta-large} & 256 & \texttt{xlnet} & 512 & 1.783784 & 0.181731 & 27 & 15 \\
+\texttt{deberta-v3-base} & 256 & \texttt{deberta-v3-small} & 512 & 0.125000 & 0.723674 & 22 & 18 \\
+\texttt{deberta-v3-base} & 256 & \texttt{distilbert} & 128 & 0.162162 & 0.687174 & 19 & 15 \\
+\texttt{deberta-v3-base} & 256 & \texttt{electra-large} & 512 & 2.250000 & 0.133614 & 30 & 18 \\
+\texttt{deberta-v3-base} & 256 & \texttt{electra-small} & 512 & 0.485714 & 0.485445 & 19 & 13 \\
+\texttt{deberta-v3-base} & 256 & \texttt{mobilebert} & 512 & 0.166667 & 0.683091 & 17 & 12 \\
+\texttt{deberta-v3-base} & 256 & \texttt{roberta} & 512 & 2.289474 & 0.130208 & 27 & 15 \\
+\texttt{deberta-v3-base} & 256 & \texttt{roberta-large} & 256 & 1.205128 & 0.272181 & 24 & 15 \\
+\texttt{deberta-v3-base} & 256 & \texttt{xlm-roberta-base} & 512 & 1.704545 & 0.191619 & 25 & 14 \\
+\texttt{deberta-v3-base} & 256 & \texttt{xlm-roberta-large} & 256 & 0.653846 & 0.418721 & 20 & 12 \\
+\texttt{deberta-v3-base} & 256 & \texttt{xlnet} & 512 & 2.204545 & 0.137434 & 26 & 14 \\
+\texttt{deberta-v3-small} & 512 & \texttt{distilbert} & 128 & 0.105263 & 0.745566 & 17 & 14 \\
+\texttt{deberta-v3-small} & 512 & \texttt{electra-large} & 512 & 2.272727 & 0.131669 & 30 & 18 \\
+\texttt{deberta-v3-small} & 512 & \texttt{electra-small} & 512 & 0.000000 & 1.000000 & 16 & 15 \\
+\texttt{deberta-v3-small} & 512 & \texttt{mobilebert} & 512 & 0.000000 & 1.000000 & 14 & 15 \\
+\texttt{deberta-v3-small} & 512 & \texttt{roberta} & 512 & 1.280000 & 0.257899 & 21 & 14 \\
+\texttt{deberta-v3-small} & 512 & \texttt{roberta-large} & 256 & 0.444444 & 0.504985 & 18 & 13 \\
+\texttt{deberta-v3-small} & 512 & \texttt{xlm-roberta-base} & 512 & 1.230769 & 0.267258 & 21 & 14 \\
+\texttt{deberta-v3-small} & 512 & \texttt{xlm-roberta-large} & 256 & 0.142857 & 0.705457 & 17 & 14 \\
+\texttt{deberta-v3-small} & 512 & \texttt{xlnet} & 512 & 1.968750 & 0.160693 & 24 & 14 \\
+\texttt{distilbert} & 128 & \texttt{electra-large} & 512 & 2.720000 & 0.099261 & 27 & 16 \\
+\texttt{distilbert} & 128 & \texttt{electra-small} & 512 & 0.000000 & 1.000000 & 18 & 17 \\
+\texttt{distilbert} & 128 & \texttt{mobilebert} & 512 & 0.040000 & 0.841481 & 17 & 15 \\
+\texttt{distilbert} & 128 & \texttt{roberta} & 512 & 5.780000 & 0.016210 & 34 & 16 \\
+\texttt{distilbert} & 128 & \texttt{roberta-large} & 256 & 2.465116 & 0.116305 & 28 & 17 \\
+\texttt{distilbert} & 128 & \texttt{xlm-roberta-base} & 512 & 5.224490 & 0.022271 & 33 & 16 \\
+\texttt{distilbert} & 128 & \texttt{xlm-roberta-large} & 256 & 1.956522 & 0.161887 & 25 & 15 \\
+\texttt{distilbert} & 128 & \texttt{xlnet} & 512 & 4.326923 & 0.037514 & 34 & 18 \\
+\texttt{electra-large} & 512 & \texttt{electra-small} & 512 & 3.571429 & 0.058782 & 17 & 29 \\
+\texttt{electra-large} & 512 & \texttt{mobilebert} & 512 & 1.190476 & 0.275234 & 17 & 10 \\
+\texttt{electra-large} & 512 & \texttt{roberta} & 512 & 0.761905 & 0.382733 & 18 & 12 \\
+\texttt{electra-large} & 512 & \texttt{roberta-large} & 256 & 0.106383 & 0.744272 & 15 & 18 \\
+\texttt{electra-large} & 512 & \texttt{xlm-roberta-base} & 512 & 0.571429 & 0.449692 & 17 & 12 \\
+\texttt{electra-large} & 512 & \texttt{xlm-roberta-large} & 256 & 0.666667 & 0.414216 & 18 & 13 \\
+\texttt{electra-large} & 512 & \texttt{xlnet} & 512 & 0.108108 & 0.742275 & 15 & 17 \\
+\texttt{electra-small} & 512 & \texttt{mobilebert} & 512 & 0.047619 & 0.827259 & 15 & 12 \\
+\texttt{electra-small} & 512 & \texttt{roberta} & 512 & 2.903226 & 0.088402 & 28 & 15 \\
+\texttt{electra-small} & 512 & \texttt{roberta-large} & 256 & 0.340909 & 0.559726 & 18 & 12 \\
+\texttt{electra-small} & 512 & \texttt{xlm-roberta-base} & 512 & 2.666667 & 0.102470 & 27 & 15 \\
+\texttt{electra-small} & 512 & \texttt{xlm-roberta-large} & 256 & 0.000000 & 1.000000 & 15 & 16 \\
+\texttt{electra-small} & 512 & \texttt{xlnet} & 512 & 3.125000 & 0.077100 & 28 & 15 \\
+\texttt{mobilebert} & 512 & \texttt{roberta} & 512 & 1.280000 & 0.257899 & 21 & 14 \\
+\texttt{mobilebert} & 512 & \texttt{roberta-large} & 256 & 0.020833 & 0.885234 & 13 & 14 \\
+\texttt{mobilebert} & 512 & \texttt{xlm-roberta-base} & 512 & 1.333333 & 0.248213 & 22 & 14 \\
+\texttt{mobilebert} & 512 & \texttt{xlm-roberta-large} & 256 & 0.000000 & 1.000000 & 13 & 14 \\
+\texttt{mobilebert} & 512 & \texttt{xlnet} & 512 & 2.083333 & 0.148915 & 24 & 14 \\
+\texttt{roberta} & 512 & \texttt{roberta-large} & 256 & 0.000000 & 1.000000 & 15 & 16 \\
+\texttt{roberta} & 512 & \texttt{xlm-roberta-base} & 512 & 0.420000 & 0.516768 & 18 & 24 \\
+\texttt{roberta} & 512 & \texttt{xlm-roberta-large} & 256 & 0.444444 & 0.504985 & 17 & 13 \\
+\texttt{roberta} & 512 & \texttt{xlnet} & 512 & 0.500000 & 0.479500 & 19 & 17 \\
+\texttt{roberta-large} & 256 & \texttt{xlm-roberta-base} & 512 & 0.022727 & 0.880151 & 16 & 17 \\
+\texttt{roberta-large} & 256 & \texttt{xlm-roberta-large} & 256 & 0.521739 & 0.469672 & 23 & 17 \\
+\texttt{roberta-large} & 256 & \texttt{xlnet} & 512 & 0.634146 & 0.425821 & 24 & 18 \\
+\texttt{xlm-roberta-base} & 512 & \texttt{xlm-roberta-large} & 256 & 0.510638 & 0.474883 & 23 & 17 \\
+\texttt{xlm-roberta-base} & 512 & \texttt{xlnet} & 512 & 0.000000 & 1.000000 & 18 & 18 \\
+\texttt{xlm-roberta-large} & 256 & \texttt{xlnet} & 512 & 0.561404 & 0.453585 & 23 & 17 \\
+\bottomrule
+\end{longtable}
+\end{landscape}
+
+\end{document}
