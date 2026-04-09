@@ -1,0 +1,87 @@
+
+--------------------------------------------------
+Loaded scores (cross-run)
+--------------------------------------------------
+  C:\Users\yaljnadi\Desktop\GitHub_Repos\LMForge\Sandbox\Yaman\Fall25\New_Manova_Permanova_Results_For_Models\Codes_Outputs\NEW_RUNS_LMForge_RUN01_Lab_Machine\Generated_Results\gemma-7b-spark\scores.csv
+  C:\Users\yaljnadi\Desktop\GitHub_Repos\LMForge\Sandbox\Yaman\Fall25\New_Manova_Permanova_Results_For_Models\Codes_Outputs\NEW_RUNS_LMForge_RUN02_Lab_Machine\Generated_Results\Qwen2.5-7B-Instruct\scores.csv
+  C:\Users\yaljnadi\Desktop\GitHub_Repos\LMForge\Sandbox\Yaman\Fall25\New_Manova_Permanova_Results_For_Models\Codes_Outputs\NEW_RUNS_LMForge_RUN03_Lab_Machine\Generated_Results\Mistral-7B-Instruct-v0.3\scores.csv
+  C:\Users\yaljnadi\Desktop\GitHub_Repos\LMForge\Sandbox\Yaman\Fall25\New_Manova_Permanova_Results_For_Models\Codes_Outputs\NEW_RUNS_LMForge_RUN04_Lab_Machine\Generated_Results\Phi-4-mini-instruct\scores.csv
+
+--------------------------------------------------
+Henze-Zirkler Multivariate Normality Test
+--------------------------------------------------
+HZResults(hz=np.float64(2.3958382774010394), pval=np.float64(5.002110618878549e-242), normal=False)
+
+--------------------------------------------------
+Outlier Summary
+--------------------------------------------------
+   Total Observations  Outliers Detected (p < 0.001)  Percentage Outliers
+0                  80                             33                41.25
+
+--------------------------------------------------
+Box's M Test for Homogeneity of Covariance (by model)
+--------------------------------------------------
+           Chi2     df          pval  equal_cov
+box  596.505598  108.0  1.194271e-68      False
+
+--------------------------------------------------
+MANOVA Results (multivariate effect of model)
+--------------------------------------------------
+                   Multivariate linear model
+================================================================
+                                                                
+----------------------------------------------------------------
+       Intercept         Value   Num DF  Den DF  F Value  Pr > F
+----------------------------------------------------------------
+          Wilks' lambda   0.0014 8.0000 69.0000 6290.0469 0.0000
+         Pillai's trace   0.9986 8.0000 69.0000 6290.0469 0.0000
+ Hotelling-Lawley trace 729.2808 8.0000 69.0000 6290.0469 0.0000
+    Roy's greatest root 729.2808 8.0000 69.0000 6290.0469 0.0000
+----------------------------------------------------------------
+                                                                
+----------------------------------------------------------------
+         C(group)         Value   Num DF  Den DF  F Value Pr > F
+----------------------------------------------------------------
+           Wilks' lambda  0.0120 24.0000 200.7222 30.0513 0.0000
+          Pillai's trace  2.1538 24.0000 213.0000 22.5885 0.0000
+  Hotelling-Lawley trace 13.7120 24.0000 142.4578 38.8244 0.0000
+     Roy's greatest root  9.9933  8.0000  71.0000 88.6903 0.0000
+================================================================
+
+
+--------------------------------------------------
+PERMANOVA (model as grouping factor)
+--------------------------------------------------
+method name               PERMANOVA
+test statistic name        pseudo-F
+sample size                      80
+number of groups                  4
+test statistic             3.537276
+p-value                       0.019
+number of permutations          999
+Name: PERMANOVA results, dtype: object
+
+--------------------------------------------------
+MANOVA on PCA Components (by model)
+--------------------------------------------------
+                  Multivariate linear model
+=============================================================
+                                                             
+-------------------------------------------------------------
+        Intercept        Value  Num DF  Den DF F Value Pr > F
+-------------------------------------------------------------
+           Wilks' lambda 0.7618 2.0000 75.0000 11.7253 0.0000
+          Pillai's trace 0.2382 2.0000 75.0000 11.7253 0.0000
+  Hotelling-Lawley trace 0.3127 2.0000 75.0000 11.7253 0.0000
+     Roy's greatest root 0.3127 2.0000 75.0000 11.7253 0.0000
+-------------------------------------------------------------
+                                                             
+-------------------------------------------------------------
+        C(group)        Value  Num DF  Den DF  F Value Pr > F
+-------------------------------------------------------------
+          Wilks' lambda 0.3494 6.0000 150.0000 17.2958 0.0000
+         Pillai's trace 0.7097 6.0000 152.0000 13.9336 0.0000
+ Hotelling-Lawley trace 1.6933 6.0000  98.2422 21.0294 0.0000
+    Roy's greatest root 1.5867 3.0000  76.0000 40.1971 0.0000
+=============================================================
+
