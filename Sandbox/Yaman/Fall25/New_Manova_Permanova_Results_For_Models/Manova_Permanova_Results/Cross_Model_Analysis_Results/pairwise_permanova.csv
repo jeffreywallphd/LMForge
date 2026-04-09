@@ -1,7 +1,0 @@
-Model key 1,Model key 2,Pseudo-F,p-value
-gemma_7b_spark,Qwen2_5_7B_Instruct,8.737309371333215,0.006
-gemma_7b_spark,Mistral_7B_Instruct_v0_3,1.4797811077889702,0.229
-gemma_7b_spark,Phi_4_mini_instruct,5.065852872327843,0.029
-Qwen2_5_7B_Instruct,Mistral_7B_Instruct_v0_3,2.138229349529854,0.15
-Qwen2_5_7B_Instruct,Phi_4_mini_instruct,2.709191761194495,0.099
-Mistral_7B_Instruct_v0_3,Phi_4_mini_instruct,2.476947059539132,0.103
