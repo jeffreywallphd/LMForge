@@ -1,0 +1,20 @@
+\begin{table}[H]
+\centering
+\caption{Cross-model Type-III ANOVA $p$-values for $C(\mathrm{group})$ (group = model), by metric and chunk size.}
+\label{tab:cross-anova-pvalues}
+\small
+\begin{tabular}{lcccc}
+\toprule
+DV & 128 & 256 & 512 & 1024 \\
+\midrule
+rouge1 & 0.005 & 0.002 & 0.007 & 0.022 \\
+rouge2 & <0.001 & 0.137 & 0.333 & 0.019 \\
+rougeL & <0.001 & 0.101 & 0.137 & 0.038 \\
+rougeLsum & 0.001 & 0.005 & 0.010 & 0.029 \\
+bert\_score\_P & <0.001 & <0.001 & <0.001 & <0.001 \\
+bert\_score\_R & 0.012 & <0.001 & 0.022 & 0.005 \\
+bert\_score\_F1 & <0.001 & <0.001 & 0.042 & <0.001 \\
+sts\_score & <0.001 & <0.001 & 0.002 & <0.001 \\
+\bottomrule
+\end{tabular}
+\end{table}

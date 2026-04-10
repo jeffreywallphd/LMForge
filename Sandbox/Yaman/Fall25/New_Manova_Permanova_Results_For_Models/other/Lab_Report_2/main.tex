@@ -1,0 +1,255 @@
+\documentclass[12pt, a4paper]{article}
+
+% --- Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{float}       % For controlling image placement
+\usepackage{hyperref}    % For clickable links
+\usepackage{booktabs}    % For nicer tables
+\usepackage{enumitem}    % For customizing lists
+\usepackage{titlesec}    % For header formatting
+\usepackage{subcaption}  % For arranging the QQ-plots in a grid
+\usepackage{caption}     % For better caption control
+
+% --- Page Setup ---
+\geometry{margin=1in}
+\setlength{\parskip}{0.5em}
+\setlength{\parindent}{0pt}
+
+% --- Title Information ---
+\title{\textbf{Lab Machine Results Comparison}}
+
+\begin{document}
+
+\maketitle
+
+\section{Summary}
+This report evaluates the performance of four Large Language Models (LLMs) Phi-4, Mistral-7B-v0.3, Qwen2.5-7B, and Gemma-7B in generating a synthetic Q\&A datasets. 
+
+\subsection*{Key Findings}
+\begin{itemize}
+    \item \textbf{Best Overall Performer:} Even though all of the models are almost on the same level Mistral-7B-Instruct-v0.3 is the recommended model. It demonstrated the best balance of speed, reliability, and competitive output quality.
+    \item \textbf{Quality vs. Reliability Trade-off:} Qwen2.5-7B produced the highest semantic quality (BERT scores) but suffered from a critical failure rate, making it inefficient for automated pipelines without significant error handling.
+    \item \textbf{Underperformance:} Gemma-7B consistently scored lower than its peers in both semantic accuracy and structural quality, despite having a moderate success rate.
+    \item \textbf{Configuration Insight:} Increasing the \texttt{max\_tokens} limit from 128 to 512+ statistically improved the output quality for most models. A minimum of 512 tokens is recommended to ensure structural integrity of the generated JSON data.
+\end{itemize}
+
+% --- 2. Methodology ---
+\section{Methodology}
+\begin{itemize}
+    \item \textbf{Data Processing:} Text was parsed and split into chunks of varying sizes (128, 256, 512, 1024 tokens) using LangChain.
+    \item \textbf{Sample Size:} 900 samples per chunk configuration.
+
+    \newpage
+    \item \textbf{Models Tested:}
+    \begin{itemize}
+        \item \texttt{microsoft/Phi-4-mini-instruct}
+        \item \texttt{mistralai/Mistral-7B-Instruct-v0.3}
+        \item \texttt{Qwen/Qwen2.5-7B-Instruct}
+        \item \texttt{google/gemma-7b}
+    \end{itemize}
+    \item \textbf{Evaluation Metrics:}
+    \begin{itemize}
+        \item \textit{Efficiency:} Elapsed Time (minutes).
+        \item \textit{Reliability:} Success Rate (percentage of valid, parseable JSON outputs).
+        \item \textit{Quality:} BERT Score (F1) for semantic similarity and ROUGE-L for structural/phrasing overlap against reference standards.
+    \end{itemize}
+\end{itemize}
+
+% --- 3. Results and Analysis ---
+\section{Results and Analysis}
+
+\subsection{Efficiency (Elapsed Time)}
+The computational cost generally increases with the \texttt{max\_tokens} limit.
+
+\begin{itemize}
+    \item Mistral-7B was consistently the fastest model, averaging around 200 minutes per run.
+    \item Phi-4 and Qwen2.5 were slower, with Phi-4 averaging $\approx 270$ minutes. This suggests Mistral is roughly 25--30\% more efficient in terms of raw processing time for this specific task.
+\end{itemize}
+
+% TABLE ADDED: Comparison of Elapsed Time
+\begin{table}[H]
+    \centering
+    \caption{Elapsed Time Comparison (Chunk Size 512, Max Tokens 2048)}
+    \label{tab:time_comparison}
+    \begin{tabular}{lrr}
+        \toprule
+        \textbf{Model} & \textbf{Elapsed Duration} & \textbf{Approx. Minutes} \\
+        \midrule
+        Mistral-7B-v0.3 & 4h 44m & 284 min \\
+        Phi-4 & 5h 50m & 350 min \\
+        Gemma-7B & 7h 41m & 461 min \\
+        Qwen2.5-7B & 9h 47m & 587 min \\
+        \bottomrule
+    \end{tabular}
+    \small{\\ \textit{Data derived from run logs showing total generation time for the 2048 token limit configuration.}}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    % Ensure you upload 'bar_elapsed_time.png' to Overleaf
+    \includegraphics[width=0.8\textwidth]{bar_elapsed_time.png}
+    \caption{Elapsed Time Comparison}
+    \label{fig:elapsed_time}
+\end{figure}
+
+\subsection{Reliability (Success Rate)}
+This metric tracks the model's ability to strictly follow formatting instructions (e.g., generating valid JSON).
+
+\begin{itemize}
+    \item \textbf{Winner:} Mistral-7B achieved the highest reliability. As shown in Table \ref{tab:raw_metrics}, Mistral encountered significantly fewer generation failures (23 failures) compared to Qwen (1,064 failures) at the same configuration.
+    \item \textbf{Bottleneck:} Qwen2.5-7B struggled significantly, often failing to produce valid outputs.
+    \item \textbf{Gemma-7B:} Maintained a moderate success rate but did not match the robustness of Mistral.
+    \item \textbf{Phi-4:} Even though it's struggling with small \texttt{max\_tokens} it appears to be doing better than Gemma-7B at higher 512+ \texttt{max\_tokens}.
+\end{itemize}
+
+% TABLE ADDED: Comprehensive Raw Data Snapshot
+\begin{table}[H]
+    \centering
+    \caption{Raw Performance Metrics (Configuration: Chunk 512 / Max Tokens 1024)}
+    \label{tab:raw_metrics}
+    \begin{tabular}{lccccc}
+        \toprule
+        \textbf{Model} & \textbf{Success} & \textbf{Fail} & \textbf{BERT (F1)} & \textbf{ROUGE-L} \\
+        \midrule
+        Mistral-7B-v0.3 & \textbf{1599} & \textbf{23}   & 0.586 & 0.193 \\
+        Phi-4           & 1462          & 160           & \textbf{0.609} & \textbf{0.217} \\
+        Gemma-7B        & 801           & 821           & 0.465 & 0.119 \\
+        Qwen2.5-7B      & 243           & 1064          & 0.591 & 0.204 \\
+        \bottomrule
+    \end{tabular}
+    \small{\\ \textit{Note: "Fail" indicates the number of generations that could not be parsed into valid JSON. Qwen2.5 shows competitive BERT scores but a critically high failure count.}}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    % Ensure you upload 'bar_success_rate.png' to Overleaf
+    \includegraphics[width=0.8\textwidth]{bar_success_rate.png}
+    \caption{Success Rate Comparison}
+    \label{fig:success_rate}
+\end{figure}
+
+\subsection{Semantic Quality (BERT F1 Score)}
+This metric measures how well the meaning of the generated Q\&A matches the source context.
+
+\begin{itemize}
+    \item \textbf{High Quality:} Qwen2.5-7B, despite its failures, produced high semantically accurate text, comparable to Phi-4.
+    \item \textbf{Underperformer:} Gemma-7B consistently scored the lowest (approx. 0.45 -- 0.50), indicating its generated questions and answers were less semantically aligned with the source text compared to the other three models.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    % Ensure you upload 'bar_bert_f1.png' to Overleaf
+    \includegraphics[width=0.8\textwidth]{bar_bert_f1.png}
+    \caption{BERT F1 Semantic Quality Scores}
+    \label{fig:bert_f1}
+\end{figure}
+
+\subsection{Structural Quality (ROUGE-L Score)}
+This metric measures phrasing overlap and structural adherence.
+
+\begin{itemize}
+    \item \textbf{Recovery of Phi-4:} While Phi-4 lagged slightly in semantic scores, it performed excellent structurally at higher token limits (512+), rivaling Mistral and Qwen.
+    \item \textbf{Low-Resource Behavior:} Qwen2.5 was the only model to maintain decent structure at 128 tokens. Both Mistral and Phi-4 showed a sharp drop in quality at this low setting, confirming they require more ``breathing room'' (tokens) to form complete structures.
+    \item \textbf{Gemma-7B Lag:} Gemma's structural scores remained low across all token sizes, further confirming it struggled with the specific output format required.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    % Ensure you upload 'bar_rouge_l.png' to Overleaf
+    \includegraphics[width=0.8\textwidth]{bar_rouge_l.png}
+    \caption{ROUGE-L Structural Quality Scores}
+    \label{fig:rouge_l}
+\end{figure}
+
+% --- 4. Statistical Validation ---
+\section{Statistical Validation}
+
+\subsection{Multivariate Analysis Assessment (MANOVA)}
+To determine if the experimental configurations had a statistically significant combined effect on all quality metrics simultaneously, a Multivariate Analysis of Variance (MANOVA) was initially considered.
+
+However, a critical assumption of MANOVA is \textit{multivariate normality}—the requirement that the residuals of the dependent variables are normally distributed within each group. This assumption was tested using Quantile-Quantile (Q-Q) plots for each model.
+
+\begin{figure}[H]
+    \centering
+    % Row 1
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{GEMMA-7B-MANOVA_QQPLOT.png}
+        \caption{Gemma-7B}
+        \label{fig:qq_gemma}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{microsoft-Phi-4-mini-instruct_QQPLOT.png}
+        \caption{Phi-4}
+        \label{fig:qq_phi4}
+    \end{subfigure}
+    
+    \vspace{0.5cm} % Spacing between rows
+    
+    % Row 2
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Mistral-7B-Instruct-v0.3_QQPLOT.png}
+        \caption{Mistral-7B-v0.3}
+        \label{fig:qq_mistral}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Qwen2.5-7B-Instruct_QQPLOT.png}
+        \caption{Qwen2.5-7B}
+        \label{fig:qq_qwen}
+    \end{subfigure}
+    
+    \caption{Q-Q Plots for Multivariate Normality Check. The significant deviation of data points from the theoretical normal distribution indicates a violation of the normality assumption required for MANOVA.}
+    \label{fig:manova_qqplots}
+\end{figure}
+
+As illustrated in Figure \ref{fig:manova_qqplots}, the data points deviate significantly from the red reference line, indicating a lack of normality in the distribution of the residuals. 
+
+\textbf{Conclusion on MANOVA:} Since the normality assumption is violated, the standard MANOVA test cannot be reliably used for this dataset. Instead, a non-parametric alternative such as \textbf{PERMANOVA} (Permutational Multivariate Analysis of Variance) is recommended for future multivariate testing, as it does not rely on the assumption of normality.
+
+\subsection{Pairwise Analysis (T-Tests)}
+Given the limitations of the multivariate approach on this specific dataset, we proceeded with robust Pairwise T-Tests with False Discovery Rate (FDR) correction to validate individual improvements.
+
+\begin{description}
+    \item[Qwen2.5-7B (High Sensitivity):] \hfill \\
+    \textit{Finding:} Highly significant ($p<0.05$) improvements in ROUGE scores when moving from 128 to 256+ tokens. \\
+    \textit{Implication:} This model is severely penalized by tight token limits.
+
+    \item[Mistral-7B \& Gemma-7B (Moderate Sensitivity):] \hfill \\
+    \textit{Finding:} Statistically significant quality gains were observed when increasing tokens from 128 to 512. \\
+    \textit{Implication:} 512 tokens is the statistical ``minimum viable'' setting for these models.
+
+    \item[Phi-4 (Low Sensitivity):] \hfill \\
+    \textit{Finding:} The analysis showed no statistically significant difference in scores across token sizes. \\
+    \textit{Implication:} Phi-4's performance is relatively static; adding more tokens does not yield a statistically guaranteed improvement in quality, though the raw ROUGE plots suggest it helps with structure.
+\end{description}
+
+% --- 5. Conclusion ---
+\section{Conclusion and Recommendations}
+Based on the analysis of 7,000+ generated samples across four models:
+
+\subsection*{Primary Recommendation: Deploy Mistral-7B-Instruct-v0.3}
+\begin{itemize}
+    \item \textbf{Configuration:} Chunk Size 512 or 1024 / Max Tokens 512 or 1024.
+    \item \textbf{Reasoning:} It offers the highest probability of success (getting usable data) with the lowest computational time, while maintaining quality scores that are statistically competitive with the best model.
+\end{itemize}
+
+\subsection*{Secondary Option (High Fidelity): Qwen2.5-7B}
+\begin{itemize}
+    \item \textbf{Use Case:} If the project prioritizes semantic nuance over quantity/speed, and if the data pipeline can handle high failure rates (e.g., by implementing a retry mechanism).
+\end{itemize}
+
+\subsection*{Models to Avoid}
+\begin{itemize}
+    \item \textbf{Gemma-7B:} consistently underperformed in quality metrics.
+    \item \textbf{Phi-4:} While capable, it is slower than Mistral and offers no quality advantage to justify the extra compute time.
+\end{itemize}
+
+\end{document}

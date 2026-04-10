@@ -1,0 +1,26 @@
+\begin{table}[H]
+\centering
+\caption{Cross-model pairwise PERMANOVA results (BH-FDR corrected within the full set of pairwise contrasts across all chunk sizes as exported). Only significant pairs shown.}
+\label{tab:cross-permanova-pairwise-sig}
+\small
+\begin{tabular}{rllcc}
+\toprule
+Chunk & Model 1 & Model 2 & Pseudo-$F$ & $p_{FDR}$ \\
+\midrule
+128 & gemma-7b-spark & Qwen2.5-7B-Instruct & 20.073 & 0.026 \\
+128 & gemma-7b-spark & Mistral-7B-Instruct-v0.3 & 19.111 & 0.026 \\
+128 & Qwen2.5-7B-Instruct & Phi-4-mini-instruct & 9.395 & 0.026 \\
+128 & Mistral-7B-Instruct-v0.3 & Phi-4-mini-instruct & 7.972 & 0.026 \\
+128 & Qwen2.5-7B-Instruct & Mistral-7B-Instruct-v0.3 & 5.638 & 0.026 \\
+128 & gemma-7b-spark & Phi-4-mini-instruct & 4.425 & 0.046 \\
+256 & gemma-7b-spark & Qwen2.5-7B-Instruct & 19.357 & 0.026 \\
+256 & gemma-7b-spark & Mistral-7B-Instruct-v0.3 & 6.556 & 0.026 \\
+256 & Qwen2.5-7B-Instruct & Mistral-7B-Instruct-v0.3 & 5.820 & 0.026 \\
+512 & Qwen2.5-7B-Instruct & Mistral-7B-Instruct-v0.3 & 14.358 & 0.026 \\
+512 & gemma-7b-spark & Qwen2.5-7B-Instruct & 6.764 & 0.026 \\
+1024 & gemma-7b-spark & Qwen2.5-7B-Instruct & 22.092 & 0.026 \\
+1024 & Qwen2.5-7B-Instruct & Mistral-7B-Instruct-v0.3 & 12.546 & 0.026 \\
+1024 & Qwen2.5-7B-Instruct & Phi-4-mini-instruct & 6.631 & 0.026 \\
+\bottomrule
+\end{tabular}
+\end{table}

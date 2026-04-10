@@ -23,8 +23,8 @@
 
 \hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
 
-\title{Decoder-Based (Causal) Language Models for Chunk-Conditioned\\
-Question--Answer Generation: Experimental and Multivariate Statistical Evaluation}
+\title{Synthetic Q\&A Dataset Generation with Decoder Models:\\
+Chunking, Reliability, Quality Metrics, and Multivariate Statistical Follow-Up}
 \author{[Your Name]\\Michigan Technological University}
 \date{}
 
@@ -33,9 +33,9 @@ Question--Answer Generation: Experimental and Multivariate Statistical Evaluatio
 \maketitle
 
 \begin{abstract}
-This report documents the decoder-model track of our lab's document-processing pipeline for language-model customization. Where an encoder-based relevance classifier (see parallel lab write-up) filters chunks before downstream use, the present study evaluates \emph{causal}, instruction-tuned decoder models that generate question--answer pairs conditioned on each retained text chunk. Four open models are exercised under a factorial-style grid crossing chunking indices $\{128,256,512,1024\}$ with multiple maximum new-token budgets for generation. Aggregated outputs are scored with ROUGE (four variants), BERTScore (precision, recall, F1), and a semantic textual similarity (STS) signal derived from sentence embeddings.
+This report documents the decoder-model track of a document-processing pipeline whose \textbf{primary deliverable} is a synthetic question--answer (Q\&A) dataset suitable for training and fine-tuning custom language models. Long documents are segmented into overlapping chunks; four open, instruction-tuned \emph{causal} decoders (Phi-4-mini-instruct, Mistral-7B-Instruct-v0.3, Qwen2.5-7B-Instruct, Gemma~7B) are prompted to emit structured Q\&A conditioned on each chunk. The current protocol targets \textbf{one} Q\&A pair per chunk (earlier pilot runs used two pairs) and processes \textbf{900} chunk attempts per configuration for chunk sizes $\{128,256,512\}$ (chunk size 1024 uses 808 attempts in the exported success-rate log, reflecting the available chunk inventory for that setting).
 
-For each model, the analysis pipeline includes exploratory visualization, correlation structure and variance inflation factors (VIF), diagnostic checks for multivariate normality (Henze--Zirkler), homogeneity of covariance (Box's~M), and multivariate outlier screening, followed by multivariate analysis of variance (MANOVA; Type~III) and permutational MANOVA (PERMANOVA; 999 permutations) on z-standardized metrics. Principal component analysis (PCA) illustrates separation of chunk-size groups in reduced space. Omnibus PERMANOVA indicates a statistically significant multivariate effect of chunk size for every model ($p=0.001$ in each saved summary), with pseudo-$F$ values ranking Qwen2.5-7B-Instruct highest, then Mistral-7B-Instruct-v0.3, Gemma (7B), and Phi-4-mini-instruct. Smaller chunk indices consistently align with higher automatic scores. Classical MANOVA assumptions are often violated (notably covariance heterogeneity and, for three models, multivariate normality), so PERMANOVA and descriptive multivariate views are treated as primary for inference. Artifacts are stored under \texttt{Jupyter\_Codes/}, \texttt{Codes\_Outputs/}, and \texttt{Manova\_Permanova\_Results/}.
+We first evaluate the engineering outcomes that matter for dataset construction: \textbf{elapsed time}, \textbf{JSON parse success rate}, and automatic \textbf{quality} scores (including BERTScore F1 and ROUGE-L in the lab summary plots). These operational results determine which model configurations produce usable training rows at acceptable cost. A final section revisits multivariate statistics: because the quality metrics are highly correlated and classical MANOVA assumptions are often violated, we emphasize assumption-lean \textbf{PERMANOVA} and report an updated \textbf{cross-model} comparison (models contrasted at fixed chunk size) alongside supporting MANOVA/ANOVA summaries.
 \end{abstract}
 
 \tableofcontents
@@ -43,23 +43,14 @@ For each model, the analysis pipeline includes exploratory visualization, correl
 
 \section{Introduction}
 
-Long-form documents in our workflow are first segmented into chunks. Encoder models address which chunks are semantically relevant; decoder models then consume those chunks (or, in the experiments reported here, chunks at controlled widths) to produce training-style question--answer data. Poor chunk sizing can dilute local context or overload the model, so understanding how chunk size interacts with decoder choice is central to pipeline design.
+The practical goal of this project is to build a \textbf{synthetic supervised dataset}: for each text chunk drawn from domain PDFs, we want a model-generated question and a model-generated answer that can be filtered, deduplicated, and merged into downstream training corpora for customized assistants. Decoder-only instruction models are a natural choice because they can follow a fixed prompt template, control output length via \texttt{max\_new\_tokens}, and emit structured payloads (JSON) that downstream tooling can parse into rows.
 
-This study focuses \emph{exclusively} on the decoder stage: conditional generation of QA pairs and multivariate evaluation of generation quality under chunk-size manipulations. It is designed to parallel, not duplicate, the encoder-track report prepared separately.
+This report is organized to mirror that priority. Sections~\ref{sec:protocol}--\ref{sec:lab-results} focus on dataset-generation \textbf{throughput and reliability} (did we get valid examples?) and \textbf{quality proxies} (are those examples aligned with the chunk under automatic metrics?). Only afterward do we summarize multivariate inference (MANOVA/PERMANOVA), which is useful for understanding how models differ jointly across correlated metrics, but is not the operational bottleneck when a run fails JSON validation.
 
 \section{Task definition}
+\label{sec:task}
 
-The decoder receives a single text chunk (and a fixed prompting template) and generates one or more question--answer pairs. Reference answers implied by the chunk text are used together with model outputs in standard automatic metrics. The task emulates retrieval-augmented generation in which the retriever supplies one chunk per query, so conclusions apply to ``single-chunk context'' settings rather than full-document prompts.
-
-\section{Data, chunking, and run artifacts}
-
-\subsection{Source material and chunking}
-
-Experiments use chunked passages derived from PDF text prepared in the lab's segmentation workflow (\texttt{Generate\_Paragraphs/} notebook and JSON under \texttt{Generate\_Paragraphs/Results/}). Chunk stores are keyed by source PDF path; nominal chunking levels $128$, $256$, $512$, and $1024$ select among files such as \texttt{extracted\_chunks\_<size>\_overlap.json}. Each experimental cell corresponds to a combination of chunk level and a chosen maximum number of new tokens allocated to decoding.
-
-\subsection{Stored outputs}
-
-For each configuration, generations are logged as JSON files (e.g.\ \texttt{generation\_log\_<chunk>\_Token\_<maxtok>\_Q1.json}) mapping source paths to chunk text and \texttt{qa\_pairs}. Run manifests such as \texttt{qa\_run\_tracker\_detailed.csv} record success and failure counts per cell, supporting auditability across lab machines and run IDs (\texttt{NEW\_RUNS\_LMForge\_RUN01\_Lab\_Machine}, \texttt{RUN02}, \texttt{RUN04}, etc.).
+The decoder receives a single text chunk (and a fixed prompting template) and generates \textbf{one} question--answer pair under the current protocol (earlier experiments requested two pairs per chunk). Outputs are expected in a parseable structured format (JSON), so a ``successful'' row is not only semantically reasonable but also \textbf{machine-valid}. Reference answers implied by the chunk text are used together with model outputs in standard automatic metrics. The task emulates retrieval-augmented generation in which the retriever supplies one chunk per query, so conclusions apply to ``single-chunk context'' settings rather than full-document prompts.
 
 \section{Model pool and experimental design}
 
@@ -87,7 +78,9 @@ Qwen2.5-7B-Instruct & \texttt{Qwen/Qwen2.5-7B-Instruct} \\
 
 \subsection{Factors and design size}
 
-Chunk size is the primary grouping factor for omnibus multivariate tests, with four levels $\{128,256,512,1024\}$. Maximum new tokens during decoding takes multiple levels (e.g.\ $128,256,512,1024,2048$), as reflected in output filenames and run trackers, yielding a grid of experimental cells. For the multivariate summaries exported to \texttt{statistical\_summary.txt}, the design has sample size $N=20$ observations and four chunk-size groups (five cells per chunk size in the crossed grid), with PERMANOVA based on $999$ permutations.
+Chunk size is a controlled experimental factor with four levels $\{128,256,512,1024\}$. Maximum new tokens during decoding takes multiple levels (e.g.\ $128,256,512,1024,2048$), as reflected in output filenames and run trackers, yielding a grid of experimental cells.
+
+For the \textbf{multivariate statistical summaries} exported alongside this project, each model contributes $N=20$ aggregated observations (five token budgets crossed with four chunk sizes), which is the basis for the per-model diagnostic plots and the cross-model tests reported later.
 
 \subsection{Inference configuration}
 
@@ -111,9 +104,116 @@ Caching & \texttt{HF\_HOME} / hub cache on lab drive \\
 \end{tabular}
 \end{table}
 
-\section{Evaluation metrics}
+\section{Data, chunking, and run artifacts}
 
-Each analysis cell contributes a vector of eight dependent variables (means over items in that cell):
+\subsection{System specifications}
+
+All decoder experiments were executed on the following workstation:
+\begin{itemize}[noitemsep]
+    \item Workstation: Dell Precision 7960 Tower.
+    \item Processor: Intel Xeon w7-3565X (2.5\,GHz, 32 cores).
+    \item GPU: NVIDIA RTX 5000 Ada Generation (32\,GB GDDR6 discrete VRAM).
+    \item Memory \& OS: 132\,GB RAM running Windows 11.
+\end{itemize}
+
+\subsection{Source material and chunking}
+
+Experiments use chunked passages derived from PDF text prepared in the lab's segmentation workflow (\texttt{Generate\_Paragraphs/} notebook and JSON under \texttt{Generate\_Paragraphs/Results/}). Chunk stores are keyed by source PDF path; nominal chunking levels $128$, $256$, $512$, and $1024$ select among files such as \texttt{extracted\_chunks\_<size>\_overlap.json}. Each experimental cell corresponds to a combination of chunk level and a chosen maximum number of new tokens allocated to decoding.
+
+Chunking is implemented by extracting plain text from PDFs, concatenating pages, then applying a recursive text splitter with a \textbf{target size expressed in words} but approximated using a fixed average characters-per-word constant. Overlap is set as a fixed fraction of the chunk size (15\%). Splitting prefers boundaries in the order: paragraph breaks, line breaks, sentence boundaries, spaces, then (as a last resort) character-level splits. A light filter removes obviously non-content chunks (e.g., short fragments, numeric/punctuation-only strings, and copyright boilerplate or trailing references headings).
+
+\subsection{Stored outputs}
+
+For each configuration, generations are logged as JSON files (e.g.\ \texttt{generation\_log\_<chunk>\_Token\_<maxtok>\_Q1.json}) mapping source paths to chunk text and \texttt{qa\_pairs}. Run manifests such as \texttt{qa\_run\_tracker\_detailed.csv} record success and failure counts per cell, supporting auditability across lab machines and run IDs (\texttt{NEW\_RUNS\_LMForge\_RUN01\_Lab\_Machine}, \texttt{RUN02}, \texttt{RUN04}, etc.).
+
+\section{Experimental protocol (dataset generation)}
+\label{sec:protocol}
+
+\subsection{Models and factor grid}
+
+We evaluate four Hugging Face causal instruction-tuned checkpoints (Table~\ref{tab:decoder-pool}). Each model is run across a grid that crosses chunk sizes $\{128,256,512,1024\}$ with multiple \texttt{max\_new\_tokens} budgets (e.g.\ $128,256,512,1024,2048$), yielding one experimental cell per (model, chunk size, token budget) combination.
+
+\subsection{Sample size per cell}
+
+The lab's exported success-rate accounting (\texttt{other/Lab\_Report\_2/Results/Results.txt}) uses \textbf{900} chunk attempts for most cells at chunk sizes 128--512. At chunk size 1024, the log shows \textbf{808} total chunks for several models, reflecting the number of available 1024-width chunks under the current PDF inventory and filtering rules (not a modeling hyperparameter).
+
+\subsection{Protocol evolution (what changed since earlier write-ups)}
+
+Earlier pilot runs processed on the order of \textbf{1800} chunks per iteration and requested \textbf{two} Q\&A pairs per chunk. The current protocol reduces the per-cell attempt count to \textbf{900} and requests \textbf{one} pair per chunk. This generally reduces generation cost per cell, simplifies JSON validation, and changes the interpretation of ``failures'' (fewer required fields per success).
+
+\section{Dataset-generation results (reliability, cost, and quality proxies)}
+\label{sec:lab-results}
+
+\subsection{Summary of what ``good'' means for dataset construction}
+
+For downstream dataset assembly, the dominant constraints are usually:
+\begin{itemize}[noitemsep]
+    \item \textbf{Reliability:} high fraction of parseable JSON outputs (low failure rate).
+    \item \textbf{Throughput:} wall-clock time per cell (and therefore cost per accepted row).
+    \item \textbf{Quality proxies:} automatic scores such as BERTScore F1 and ROUGE-L on accepted rows.
+\end{itemize}
+
+\subsection{Elapsed time}
+
+Figure~\ref{fig:lab-elapsed} shows the lab's elapsed-time summary (faceted by model). Larger \texttt{max\_new\_tokens} budgets generally increase runtime; the figure is the authoritative comparison for throughput because it is generated directly from the up-to-date run logs.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{../other/Lab_Report_2/Results/faceted_elapsed_time.png}
+\caption{Elapsed time versus experimental configuration (faceted by decoder model). Source: \texttt{other/Lab\_Report\_2/Results/faceted\_elapsed\_time.png}.}
+\label{fig:lab-elapsed}
+\end{figure}
+
+\subsection{JSON success rate}
+
+Figure~\ref{fig:lab-success} summarizes parse success rates across the grid. Mistral exhibits the strongest reliability at many mid-to-high token budgets; Qwen can be competitive on quality for accepted rows but often pays a substantial reliability tax (many invalid generations), which directly reduces usable dataset yield unless retries and repair loops are implemented.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{../other/Lab_Report_2/Results/bar_success_rate.png}
+\caption{JSON parse success rate by configuration. Source: \texttt{other/Lab\_Report\_2/Results/bar\_success\_rate.png}.}
+\label{fig:lab-success}
+\end{figure}
+
+Table~\ref{tab:success-snapshot} extracts one representative operating point (chunk size 512, \texttt{max\_new\_tokens}$=1024$) from \texttt{Results.txt}. It highlights the practical gap between ``best quality'' and ``best dataset yield'': Mistral achieves the highest success count on 900 attempts, while Qwen's accepted rows are far fewer under the same nominal configuration in the exported log.
+
+\begin{table}[H]
+\centering
+\caption{JSON success snapshot from \texttt{Results.txt}: chunk size 512, \texttt{max\_new\_tokens}$=1024$.}
+\label{tab:success-snapshot}
+\begin{tabular}{lrrr}
+\toprule
+Model & Successes & Total chunks & Success rate \\
+\midrule
+Mistral-7B & 874 & 900 & 0.971 \\
+Phi-4 & 493 & 900 & 0.548 \\
+Gemma-7B & 155 & 900 & 0.172 \\
+Qwen-2.5-7B & 93 & 653 & 0.142 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Quality proxies: BERTScore F1 and ROUGE-L}
+
+Figures~\ref{fig:lab-bert} and \ref{fig:lab-rouge} report the lab's aggregated BERTScore F1 and ROUGE-L comparisons. These plots should be interpreted jointly with success rate: a model can produce attractive metric bars on the subset of rows that survive parsing, while still being expensive to deploy as an unattended dataset generator.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{../other/Lab_Report_2/Results/bar_bert_f1.png}
+\caption{BERTScore F1 by configuration. Source: \texttt{other/Lab\_Report\_2/Results/bar\_bert\_f1.png}.}
+\label{fig:lab-bert}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{../other/Lab_Report_2/Results/bar_rouge_l.png}
+\caption{ROUGE-L by configuration. Source: \texttt{other/Lab\_Report\_2/Results/bar\_rouge\_l.png}.}
+\label{fig:lab-rouge}
+\end{figure}
+
+\section{Evaluation metrics for multivariate analysis}
+
+Each aggregated analysis cell contributes a vector of eight dependent variables (cell means over accepted/scored items):
 \begin{itemize}[noitemsep]
     \item ROUGE-1, ROUGE-2, ROUGE-L, ROUGE-Lsum;
     \item BERTScore precision, recall, and F1;
@@ -122,33 +222,7 @@ Each analysis cell contributes a vector of eight dependent variables (means over
 
 ROUGE and BERTScore capture n-gram and token-level overlap with references; STS summarizes semantic proximity. Together they support a multivariate profile of quality, at the cost of substantial correlation among components (especially among ROUGE variants).
 
-\section{Statistical validation}
-
-\subsection{Exploratory and association structure}
-
-Line plots and boxplots relate chunk size and max-new-token settings to BERTScore F1. Correlation heatmaps and VIF quantify redundancy. Reported VIFs for ROUGE components are very large, flagging linear multicollinearity that complicates interpretation of individual MANOVA coefficients.
-
-\subsection{MANOVA assumptions}
-
-\textbf{Multivariate normality} is assessed with the Henze--Zirkler test. In the archived summaries, normality is rejected for Gemma, Mistral, and Phi (very small $p$-values), while Qwen2.5 does not reject at $\alpha=0.05$ ($p\approx 0.09$).
-
-\textbf{Homogeneity of covariance} is assessed with Box's~M; the saved output rejects equal covariances across chunk-size groups for all models, with $\chi^2$ reported as infinite in the log (numerical overflow under severe heterogeneity).
-
-\textbf{Outliers} are flagged via Mahalanobis distance; approximately $25\%$ of the $N=20$ observations exceed the threshold at $p<0.001$ in each model's \texttt{outlier\_summary.csv}.
-
-\subsection{MANOVA (Type III)}
-
-Type~III MANOVA tables (Wilks' $\Lambda$, Pillai, Hotelling--Lawley, Roy) are computed for completeness. Because covariance homogeneity and outlier rates are problematic, these results are \emph{not} treated as the primary confirmatory basis.
-
-\subsection{PERMANOVA}
-
-PERMANOVA tests whether chunk-size groups differ on the \emph{joint} metric vector using permutations of Euclidean distances among z-scored outcomes. The omnibus pseudo-$F$ and permutation $p$-value are the main inferential summaries. Pairwise PERMANOVA contrasts adjacent and extreme chunk sizes; $p$-values are permutation-based and, with $B=999$, floor at $0.001$ when no permuted statistic exceeds the observed value.
-
-\subsection{PCA}
-
-PCA projects the dependent variables into two dimensions for visualization and supports auxiliary MANOVA on the first components where recorded in \texttt{statistical\_summary.txt}.
-
-\section{Results}
+\section{Descriptive multivariate profiles (per model)}
 
 \subsection{Mean outcomes by chunk size}
 
@@ -222,83 +296,79 @@ Chunk & R1 & R2 & RL & RLsum & BERT-P & BERT-R & BERT-F1 & STS \\
 \end{tabular}
 \end{table}
 
-\subsection{Omnibus PERMANOVA and cross-model ranking}
+\section{Discussion (dataset generation first)}
 
-Table~\ref{tab:permanova-omnibus} summarizes the chunk-size effect. All four models reject the null of equal multivariate location at the permutation threshold; the pseudo-$F$ magnitude orders models by how \emph{sharply} chunk sizes separate in metric space.
+Three practical points follow from Section~\ref{sec:lab-results} for teams building training corpora.
 
-\begin{table}[H]
-\centering
-\caption{Omnibus PERMANOVA for chunk size ($N=20$, four groups, 999 permutations)}
-\label{tab:permanova-omnibus}
-\begin{tabular}{lcc}
-\toprule
-Model & Pseudo-$F$ & $p$ \\
-\midrule
-Qwen2.5-7B-Instruct & 220.85 & 0.001 \\
-Mistral-7B-Instruct-v0.3 & 124.07 & 0.001 \\
-gemma-7b-spark & 35.15 & 0.001 \\
-Phi-4-mini-instruct & 13.63 & 0.001 \\
-\bottomrule
-\end{tabular}
-\end{table}
+First, \textbf{optimize for usable rows, not only metric scores}. Qwen illustrates how strong semantic scores on accepted outputs can coexist with low JSON success rates; unattended dataset generation may require aggressive repair/retry logic.
 
-\subsection{Pairwise PERMANOVA (illustrative)}
+Second, \textbf{token budget and chunk width interact with reliability}. The success-rate surface is not monotone in every model; Mistral's reliability at moderate/high token budgets is a primary reason it is attractive as a default generator.
 
-Table~\ref{tab:pairwise-mistral} and Table~\ref{tab:pairwise-phi} contrast two models with high versus low omnibus pseudo-$F$. For Mistral, even adjacent chunk sizes (e.g.\ 512 vs.\ 1024) yield small pairwise $p$-values. For Phi, the contrast 128 vs.\ 256 is not significant at $\alpha=0.05$ in the saved table ($p=0.462$), consistent with a flatter response to chunking.
+Third, \textbf{protocol changes matter}: reducing pairs-per-chunk from two to one and reducing per-cell attempts from $\sim$1800 to 900 changes cost and failure modes; always quote success rates from the same protocol version as the plotted metrics.
 
-\begin{table}[H]
-\centering
-\caption{Pairwise PERMANOVA: Mistral-7B-Instruct-v0.3 (\texttt{pairwise\_permanova.csv})}
-\label{tab:pairwise-mistral}
-\small
-\begin{tabular}{rrrr}
-\toprule
-Group 1 & Group 2 & Pseudo-$F$ & $p$ \\
-\midrule
-128 & 256 & 55.44 & 0.012 \\
-128 & 512 & 231.94 & 0.011 \\
-128 & 1024 & 538.59 & 0.007 \\
-256 & 512 & 35.04 & 0.011 \\
-256 & 1024 & 102.31 & 0.011 \\
-512 & 1024 & 14.47 & 0.007 \\
-\bottomrule
-\end{tabular}
-\end{table}
+\section{Conclusion (dataset generation)}
 
-\begin{table}[H]
-\centering
-\caption{Pairwise PERMANOVA: Phi-4-mini-instruct (\texttt{pairwise\_permanova.csv})}
-\label{tab:pairwise-phi}
-\small
-\begin{tabular}{rrrr}
-\toprule
-Group 1 & Group 2 & Pseudo-$F$ & $p$ \\
-\midrule
-128 & 256 & 0.69 & 0.462 \\
-128 & 512 & 4.27 & 0.041 \\
-128 & 1024 & 37.05 & 0.010 \\
-256 & 512 & 4.75 & 0.036 \\
-256 & 1024 & 38.70 & 0.007 \\
-512 & 1024 & 10.03 & 0.041 \\
-\bottomrule
-\end{tabular}
-\end{table}
+The decoder stage exists to produce structured Q\&A training examples under a repeatable prompt and schema. The lab's up-to-date reliability and timing plots (Section~\ref{sec:lab-results}) are the first artifacts to consult when choosing a default generator and decoding budget. Multivariate analyses below provide additional context on how models differ jointly across correlated quality metrics.
 
-\section{Discussion}
+\section{Statistical validation}
 
-Four substantive points mirror the style of conclusion in the encoder write-up, but for generation rather than classification.
+\noindent The subsections below summarize the \textbf{per-model} multivariate diagnostics and PERMANOVA framing used in the analysis notebooks (primarily for comparing chunk-size regimes within a fixed model on aggregated metric vectors). This is complementary to the cross-model tests in Section~\ref{sec:cross-model-multivariate}, which hold chunk size fixed and compare models.
 
-First, \textbf{chunk size is a first-order lever} for decoder QA quality under automatic metrics: omnibus PERMANOVA is significant for every model, and mean tables show large drops between 128- and 1024-token chunks.
+\subsection{Exploratory and association structure}
 
-Second, \textbf{models differ in sensitivity}. Qwen2.5 and Mistral exhibit the largest pseudo-$F$ values, implying cleaner separation of chunk-size profiles; Phi is comparatively robust to moderate chunk-size changes, as seen in the non-significant 128 vs.\ 256 pairwise contrast. Gemma occupies an intermediate position. This argues against a single global chunk policy without reference to the chosen decoder.
+Line plots and boxplots relate chunk size and max-new-token settings to BERTScore F1. Correlation heatmaps and VIF quantify redundancy. Reported VIFs for ROUGE components are very large, flagging linear multicollinearity that complicates interpretation of individual MANOVA coefficients.
 
-Third, \textbf{classical MANOVA is a poor primary tool} here: heterogeneous covariances, abundant multivariate outliers, and multicollinearity among metrics undermine parametric multivariate inference. PERMANOVA on standardized distances aligns better with the data geometry while still testing a meaningful multivariate null.
+\subsection{MANOVA assumptions}
 
-Fourth, \textbf{integration with the encoder track}: smaller chunks may score better partly because they localize answerable content; the encoder filter and the decoder chunk size should be co-designed so that relevance and local coherence are jointly optimized.
+\textbf{Multivariate normality} is assessed with the Henze--Zirkler test. In the archived summaries, normality is rejected for Gemma, Mistral, and Phi (very small $p$-values), while Qwen2.5 does not reject at $\alpha=0.05$ ($p\approx 0.09$).
 
-\section{Conclusion}
+\textbf{Homogeneity of covariance} is assessed with Box's~M; the saved output rejects equal covariances across chunk-size groups for all models, with $\chi^2$ reported as infinite in the log (numerical overflow under severe heterogeneity).
 
-This report presented the decoder-based experimental and statistical evaluation for chunk-conditioned question--answer generation. Four instruction-tuned causal LMs were tested under a controlled chunking and decoding grid, scored with eight correlated metrics, and analyzed with assumption-aware multivariate methods. Chunk size has a significant multivariate effect in every case; effect strength and pairwise patterns differ by architecture. Future work should enlarge $N$, add prompt variants, and validate automatic metrics against human judgments.
+\textbf{Outliers} are flagged via Mahalanobis distance; approximately $25\%$ of the $N=20$ observations exceed the threshold at $p<0.001$ in each model's \texttt{outlier\_summary.csv}.
+
+\subsection{MANOVA (Type III)}
+
+Type~III MANOVA tables (Wilks' $\Lambda$, Pillai, Hotelling--Lawley, Roy) are computed for completeness. Because covariance homogeneity and outlier rates are problematic, these results are \emph{not} treated as the primary confirmatory basis.
+
+\subsection{PERMANOVA}
+
+PERMANOVA tests whether chunk-size groups differ on the \emph{joint} metric vector using permutations of Euclidean distances among z-scored outcomes. The omnibus pseudo-$F$ and permutation $p$-value are the main inferential summaries. Pairwise PERMANOVA contrasts adjacent and extreme chunk sizes; $p$-values are permutation-based and, with $B=999$, floor at $0.001$ when no permuted statistic exceeds the observed value.
+
+\subsection{PCA}
+
+PCA projects the dependent variables into two dimensions for visualization and supports auxiliary MANOVA on the first components where recorded in \texttt{statistical\_summary.txt}.
+
+\section{Multivariate results: cross-model comparison}
+\label{sec:cross-model-multivariate}
+
+\subsection{Cross-model multivariate differences (primary update)}
+
+The inferential question in this section is: \emph{for a fixed chunk size, do the decoder models differ in their multivariate metric profile?} We answer this using cross-model MANOVA (for completeness) and cross-model PERMANOVA (as the primary assumption-lean test), both treating \textbf{model identity as the grouping factor} at each chunk size.
+
+\input{../Manova_Permanova_Results/Cross_Model_Analysis_Results/tables/cross_manova_mvtest.tex}
+\input{../Manova_Permanova_Results/Cross_Model_Analysis_Results/tables/cross_permanova_omnibus.tex}
+\input{../Manova_Permanova_Results/Cross_Model_Analysis_Results/tables/cross_pairwise_permanova_sig.tex}
+
+To connect multivariate findings back to individual metrics, Table~\ref{tab:cross-anova-pvalues} reports Type-III ANOVA $p$-values for the model factor by metric and chunk size, and Table~\ref{tab:cross-anova-eta} reports partial $\eta^2$ (effect size). These univariate summaries should be interpreted cautiously (multiple testing and metric correlation), but they help localize which metrics carry the cross-model separation at each chunk size.
+
+\input{../Manova_Permanova_Results/Cross_Model_Analysis_Results/tables/cross_anova_pvalues.tex}
+\input{../Manova_Permanova_Results/Cross_Model_Analysis_Results/tables/cross_anova_eta.tex}
+
+\section{Discussion (multivariate follow-up)}
+
+Four substantive points complement the dataset-generation discussion.
+
+First, \textbf{decoder choice matters even at fixed chunk size}. Cross-model PERMANOVA rejects equality of multivariate performance profiles at every chunk size (Table~\ref{tab:cross-permanova-omnibus}), and the pairwise table shows that some separations are robust across multiple chunk sizes (notably contrasts involving Qwen2.5 versus other models).
+
+Second, \textbf{chunk size remains a first-order lever} in the descriptive metric profiles: mean tables show large drops between 128- and 1024-size chunks across models, consistent with the hypothesis that smaller local contexts yield more extractive, metric-friendly QA behavior under this protocol.
+
+Third, \textbf{classical MANOVA should be treated as secondary}. Metric collinearity, heteroskedasticity across groups, and outlier prevalence can make parametric multivariate inference fragile. Distance-based PERMANOVA on standardized outcomes aligns better with the data geometry while still testing a meaningful multivariate null.
+
+Fourth, \textbf{pipeline integration}: chunk size and model selection should be co-designed with the encoder filtering stage. Smaller chunks may score better partly because they localize answerable content; the encoder filter and the decoder configuration jointly determine whether QA generation behaves as extraction, paraphrase, or hallucination under automatic metrics.
+
+\section{Conclusion (multivariate analysis)}
+
+Aggregated quality metrics are strongly correlated; multivariate tests are most useful as a structured sanity check on ``overall separation'' between models and chunking regimes. Future work should enlarge $N$, add prompt variants, and validate automatic metrics against human judgments.
 
 \section{Figures}
 
@@ -331,6 +401,37 @@ Figure~\ref{fig:bert-lines} shows BERTScore F1 versus experimental conditions fo
 \end{subfigure}
 \caption{BERTScore F1 by chunk size and max new tokens (four decoder models).}
 \label{fig:bert-lines}
+\end{figure}
+
+Figure~\ref{fig:cross-model} summarizes the cross-model analysis assets. The omnibus PERMANOVA bar plot reports the pseudo-$F$ statistics by chunk size, while the heatmaps visualize cross-model patterns in univariate $p$-values and pairwise PERMANOVA significance.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth]{../Manova_Permanova_Results/Cross_Model_Analysis_Results/cross_model_permanova_omnibus_bar.png}
+\caption{Cross-model PERMANOVA omnibus by chunk}
+\end{subfigure}\hfill
+\begin{subfigure}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth]{../Manova_Permanova_Results/Cross_Model_Analysis_Results/cross_model_anova_pvalues_heatmap.png}
+\caption{Cross-model ANOVA $p$-values heatmap}
+\end{subfigure}
+
+\vspace{0.6em}
+
+\begin{subfigure}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth]{../Manova_Permanova_Results/Cross_Model_Analysis_Results/cross_model_pairwise_permanova_heatmap_chunk_128.png}
+\caption{Pairwise PERMANOVA (chunk 128)}
+\end{subfigure}\hfill
+\begin{subfigure}{0.48\textwidth}
+\centering
+\includegraphics[width=\linewidth]{../Manova_Permanova_Results/Cross_Model_Analysis_Results/cross_model_pairwise_permanova_heatmap_chunk_1024.png}
+\caption{Pairwise PERMANOVA (chunk 1024)}
+\end{subfigure}
+\caption{Cross-model statistical summary plots.}
+\label{fig:cross-model}
 \end{figure}
 
 Figure~\ref{fig:bert-box} displays the distribution of BERTScore F1 across chunk sizes. Narrower boxes at small chunks and wider spread at large chunks indicate more stable generation when context is localized.

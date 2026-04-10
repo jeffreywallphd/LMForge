@@ -1,0 +1,16 @@
+\begin{table}[H]
+\centering
+\caption{Cross-model MANOVA tests by chunk size for $C(\mathrm{group})$ (group = model). Reported from statsmodels \texttt{mv\\_test()}; p-values in the log are printed as 0.0000 when extremely small.}
+\label{tab:cross-manova-mvtest}
+\small
+\begin{tabular}{rcccccc}
+\toprule
+Chunk & Wilks' $\Lambda$ & $F$ & $p$ & Pillai & $F$ & $p$ \\
+\midrule
+128 & 0.0000 & 60.987 & <0.001 & 2.8934 & 37.308 & <0.001 \\
+256 & 0.0000 & 35.973 & <0.001 & 2.7882 & 18.098 & <0.001 \\
+512 & 0.0002 & 20.759 & <0.001 & 2.5719 & 8.261 & <0.001 \\
+1024 & 0.0001 & 22.804 & <0.001 & 2.7284 & 13.811 & <0.001 \\
+\bottomrule
+\end{tabular}
+\end{table}
