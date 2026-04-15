@@ -1,6 +1,0 @@
-model_name,completed,f1_score,exact_match
-bert-base-uncased,False,,
-roberta-base,False,,
-distilbert-base-uncased,False,,
-albert-base-v2,False,,
-microsoft/deberta-v3-base,False,,
