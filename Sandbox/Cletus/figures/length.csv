@@ -1,0 +1,4 @@
+Max Length,Avg Accuracy,Avg F1,Avg Precision,Avg Recall,Avg Training Time (sec),Avg Prediction Time (sec),Avg Parameters (millions)
+128,0.9652,0.9599,0.9562,0.9652,204,6.7,90.8
+256,0.9558,0.9444,0.9351,0.9558,356.7,34.2,55.1
+512,0.9732,0.9725,0.9728,0.9732,669.6,44.8,54.6
