@@ -15,6 +15,13 @@ from pathlib import Path
 from decouple import config  # type: ignore
 import sys
 
+# Use PyMySQL as MySQLdb replacement (pure Python, no compilation needed)
+try:
+    import pymysql
+    pymysql.install_as_MySQLdb()
+except ImportError:
+    pass  # If PyMySQL is not installed, mysqlclient will be used if available
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

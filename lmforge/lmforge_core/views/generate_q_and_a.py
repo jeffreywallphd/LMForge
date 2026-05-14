@@ -21,7 +21,7 @@ import csv
 from huggingface_hub import HfApi
 from datasets import Dataset
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification
 import os
 import logging
 from huggingface_hub import login
@@ -29,6 +29,17 @@ import transformers
 import re
 from huggingface_hub.utils import LocalTokenNotFoundError
 
+
+# Set up logging before any logging calls
+log_file = os.path.join(os.path.dirname(__file__), "application.log")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler(log_file, mode="a", encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
 
 # Temp Fix for loading the models. DELETE LATER 
 os.environ["HF_HOME"] = "D:/huggingface_cache" 
@@ -49,27 +60,19 @@ transformers.utils.hub.TRANSFORMERS_CACHE = "D:/huggingface_cache"
 MODEL = None
 TOKENIZER = None
 
-# Set up logging
-# Set log file name (in current directory)
-log_file = "application.log"
-
-# Setup logging to file + console
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(log_file, mode='a', encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
+# Relevance classifier (lazy load) - DeBERTa-large with max_length=256
+CLASSIFIER_MODEL = None
+CLASSIFIER_TOKENIZER = None
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-DEFAULT_HF_API_KEY = config("HUGGINGFACE_TOKEN", default="")
+DEFAULT_HF_API_KEY = config("HF_API_KEY", default="")
 # setting huggingface token
 
 def get_model_and_tokenizer():
+    """Load the Qwen2.5-7B-Instruct model and tokenizer.""" 
+    # this gets loaded too many times ??
     global MODEL, TOKENIZER
 
     if MODEL is not None and TOKENIZER is not None:
@@ -97,6 +100,131 @@ def get_model_and_tokenizer():
     except Exception as e:
         logging.error(f"Failed to load model: {e}")
         return None, None, device
+
+def get_classifier_model():
+    """Load the DeBERTa-large relevance classifier model and tokenizer (trained with max_length=256)."""
+    global CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER
+    print("Getting classifier model...")
+    if CLASSIFIER_MODEL is not None and CLASSIFIER_TOKENIZER is not None:
+        print("Classifier model loaded from cache.")
+        logging.info("Classifier model loaded from cache.")
+        return CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER
+    
+    try:
+        # Path to trained DeBERTa-large model (trained with max_length=256)
+        # Try multiple possible paths
+        hf_cache = os.getenv("HF_HOME", "D:/huggingface_cache")
+        possible_paths = [
+            config("CLASSIFIER_MODEL_PATH", default=""),
+            os.path.join(hf_cache, "classification_models", "deberta-large"),
+            os.path.join("Sandbox", "Cletus", "huggingface_cache", "classification_models", "deberta-large"),
+        ]
+
+        def _pick_checkpoint_dir(base_dir):
+            if not base_dir or not os.path.isdir(base_dir):
+                return None
+
+            # If base_dir already looks like a model dir (has config.json), use it
+            if os.path.exists(os.path.join(base_dir, "config.json")):
+                return base_dir
+
+            # Prefer a "best" folder if present
+            best_dir = os.path.join(base_dir, "best")
+            if os.path.exists(os.path.join(best_dir, "config.json")):
+                return best_dir
+
+            # Otherwise pick the latest checkpoint-* folder
+            checkpoints = [
+                os.path.join(base_dir, d)
+                for d in os.listdir(base_dir)
+                if d.startswith("checkpoint-") and os.path.isdir(os.path.join(base_dir, d))
+            ]
+            if not checkpoints:
+                return None
+
+            latest_checkpoint = max(checkpoints, key=lambda p: os.path.getmtime(p))
+            return latest_checkpoint
+
+        classifier_model_path = None
+        for path in possible_paths:
+            resolved = _pick_checkpoint_dir(path)
+            if resolved:
+                classifier_model_path = resolved
+                break
+
+        if not classifier_model_path:
+            raise FileNotFoundError(
+                "Could not find DeBERTa-large classifier model. Checked paths: " + str(possible_paths)
+            )
+
+        CLASSIFIER_TOKENIZER = AutoTokenizer.from_pretrained(
+            classifier_model_path,
+            trust_remote_code=True
+        )
+        CLASSIFIER_MODEL = AutoModelForSequenceClassification.from_pretrained(
+            classifier_model_path,
+            trust_remote_code=True
+        )
+        CLASSIFIER_MODEL.to(device)
+        CLASSIFIER_MODEL.eval()
+        
+        logging.info(f"DeBERTa-large relevance classifier loaded from: {classifier_model_path}")
+        return CLASSIFIER_MODEL, CLASSIFIER_TOKENIZER
+    
+    except Exception as e:
+        logging.error(f"Failed to load classifier model: {e}")
+        logging.warning("Classifier not available - all chunks will be processed without filtering")
+        return None, None
+
+def is_chunk_relevant(chunk_text, threshold=0.5):
+    print("Checking chunk relevance...")
+    """
+    Check if a text chunk is relevant using the DeBERTa-large classifier.
+    
+    Args:
+        chunk_text: The text chunk to classify
+        threshold: Confidence threshold (default 0.5)
+    
+    Returns:
+        bool: True if relevant, False if not
+    """
+    classifier_model, classifier_tokenizer = get_classifier_model()
+    
+    if classifier_model is None or classifier_tokenizer is None:
+        # If classifier fails to load, default to accepting all chunks
+        logging.warning("Classifier not available, accepting chunk by default")
+        return True
+    logging.info("Classifying chunk for relevance...")
+    
+    try:
+        # Tokenize the chunk with max_length=256 (as trained)
+        inputs = classifier_tokenizer(
+            chunk_text,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
+            max_length=256  # Match training configuration
+        ).to(device)
+        
+        # Get prediction
+        with torch.no_grad():
+            outputs = classifier_model(**inputs)
+            probs = torch.softmax(outputs.logits, dim=1)
+            prediction = torch.argmax(probs, dim=1).item()
+            confidence = probs[0][prediction].item()
+        
+        # prediction == 1 means relevant, prediction == 0 means irrelevant
+        is_relevant = (prediction == 1) and (confidence >= threshold)
+        
+        if not is_relevant:
+            logging.info(f"Chunk filtered out (prediction={prediction}, confidence={confidence:.3f})")
+        logging.info(f"Chunk accepted (prediction={prediction}, confidence={confidence:.3f})")
+        return is_relevant
+    
+    except Exception as e:
+        logging.error(f"Error classifying chunk: {e}")
+        # Default to accepting chunk if classification fails
+        return True
 
 def count_tokens(text):
     _, tokenizer, _ = get_model_and_tokenizer()
@@ -167,14 +295,27 @@ Respond with only valid JSON.
 """
 
 
-def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt=""):
+def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt="", use_relevance_filter=True):
     text_chunks = split_text(text, max_tokens=256)  # Adjust as needed
     results = []
     total_chunks = len(text_chunks)
-
+    filtered_count = 0
+    print(f"Total chunks to process: {total_chunks}")
     for i, chunk in enumerate(text_chunks[:chunk_limit]):
         logging.info(f"Processing chunk {i+1}/{total_chunks}")
-
+        print(f"Processing chunk {i+1}/{total_chunks}") 
+        # Apply relevance filter if enabled
+        if use_relevance_filter:
+            print("Applying relevance filter...")
+            if not is_chunk_relevant(chunk):
+                print(f"Chunk {i+1} filtered out as irrelevant")
+                filtered_count += 1
+                logging.info(f"Chunk {i+1} filtered out as irrelevant")
+                continue
+            else:
+                print(f"Chunk {i+1} accepted as relevant")
+                logging.info(f"Chunk {i+1} accepted as relevant")
+        
         strict_prompt = build_prompt(chunk, questions_num, instruction_prompt)
         model_output = model_chat(strict_prompt, max_tokens=256)
 
@@ -205,6 +346,8 @@ def extract_qa(text, chunk_limit, questions_num=1, instruction_prompt=""):
         except json.JSONDecodeError as e:
             logging.error(f"JSON Decode Error: {e}\nProblem JSON:\n{json_str}")
 
+    if use_relevance_filter and filtered_count > 0:
+        logging.info(f"Filtered out {filtered_count} irrelevant chunks out of {total_chunks} total chunks")
 
     return json.dumps(results, indent=4)
 

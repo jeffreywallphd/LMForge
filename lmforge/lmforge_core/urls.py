@@ -12,7 +12,7 @@ from .views.generate_q_and_a import generate_q_and_a, document_detail, download_
 from .views.dataset_workflow import dataset_workflow_view, dataset_workflow_document_processor
 from django.conf import settings
 from django.conf.urls.static import static
-
+from .views.generate_dataset_chunks import database_workflow
 from .management.commands.delete_document import delete_document, delete_document_mul
 
 urlpatterns = [
@@ -35,6 +35,8 @@ urlpatterns = [
     path('scrape/', ScrapeDataView.as_view(), name='scrape-data'),
     path('upload_pdf/', UploadPDFView.as_view(), name='upload-pdf'),
     path('save_manual_text/', SaveManualTextView.as_view(), name='save-manual-text'),
+
+    path('database_workflow/', database_workflow, name='database-workflow'),
 
     path('dataset_workflow/', dataset_workflow_view, name='dataset-workflow'),
     path('document_processor/', dataset_workflow_document_processor, name='document-processor'),
